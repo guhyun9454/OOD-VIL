@@ -6,3 +6,6 @@ output
 *.pt
 *.pth
 __pycache__/
+test.py
+test.ipynb
+test.txt

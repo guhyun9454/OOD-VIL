@@ -72,13 +72,13 @@ def main(args):
         return 
 
     model = create_model(
-        args.model,
-        pretrained=args.pretrained,
-        num_classes=args.nb_classes,
-        drop_rate=args.drop,
-        drop_path_rate=args.drop_path,
+        args.model, #vit_base_patch16_224
+        pretrained=args.pretrained, #True
+        num_classes=args.nb_classes, #10
+        drop_rate=args.drop, #0.0
+        drop_path_rate=args.drop_path, #0.0
         drop_block_rate=None,
-        adapt_blocks=args.adapt_blocks,
+        adapt_blocks=args.adapt_blocks, #[0, 1, 2, 3, 4]
     )
 
     model.to(device)
