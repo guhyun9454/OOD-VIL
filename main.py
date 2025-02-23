@@ -15,12 +15,13 @@ from timm.optim import create_optimizer
 
 from datasets import build_continual_dataloader
 from engine import Engine
-import models
+import models #여기서 models.py의 @register_model이 실행되고, timm의 모델 레지스트리에 등록, create_model를 통해 custom vit가 호출됨
 import utils
 import os
 
 import warnings
 warnings.filterwarnings('ignore', 'Argument interpolation should be of type InterpolationMode instead of int')
+warnings.filterwarnings("ignore","The given NumPy array is not writable, and PyTorch does not support non-writable tensors")
 
 def set_data_config(args):
     if args.dataset == "iDigits":
@@ -51,7 +52,24 @@ def main(args):
     
     
     data_loader, class_mask, domain_list = build_continual_dataloader(args)
-   
+
+    if args.task_info:
+        print(f"{'TASK INFO':=^60}")
+        print(f"{'Dataset':<20} => {args.dataset}")
+        print(f"{'Number of tasks':<20} => {args.num_tasks}")
+        print(f"{'Number of classes':<20} => {args.class_num}")
+        print(f"{'Number of domains':<20} => {args.domain_num}")
+        print("domain_list:", domain_list)
+        print("class_mask:", class_mask)
+        print("dataloader: ",len(data_loader))
+        print(f"{'':=^60}")    
+        num_tasks = len(class_mask) if class_mask is not None else args.num_tasks
+        for t_id in range(num_tasks):
+            dom_info = domain_list[t_id] if domain_list is not None else "N/A"
+            cls_info = class_mask[t_id] if class_mask is not None else "N/A"
+            print(f"Task {t_id+1} => domain(s): {dom_info}, classes: {cls_info}")
+        print(f"{'':=^60}")
+        return 
 
     model = create_model(
         args.model,
@@ -201,9 +219,12 @@ if __name__ == '__main__':
     parser.add_argument('--num_freeze_epochs', type=int,default=3)
     parser.add_argument('--eval_only_emas', default=False)
 
-    # Misc parameters
+    # Misc (기타) parameters
+    parser.add_argument('--task_info', action='store_true', help='Print tasks only and skip training')
     parser.add_argument('--print_freq', type=int, default=10, help = 'The frequency of printing')
     parser.add_argument('--develop', action='store_true', default=False)
+    parser.add_argument('--verbose', action='store_true', default=False)
+
     
      #! IC
     parser.add_argument('--IC', action='store_true', default=False, help='if using incremental classifier')
