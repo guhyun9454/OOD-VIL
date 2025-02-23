@@ -24,7 +24,8 @@ def target_transform(x, nb_classes):
 def build_continual_dataloader(args):
     dataloader = list()
     class_mask = list() if args.task_inc or args.train_mask else None
-
+    domain_list = None
+    
     transform_train = build_transform(True, args)
     transform_val = build_transform(False, args)
 
@@ -214,35 +215,37 @@ def get_dataset(dataset, transform_train, transform_val, mode, args,):
     return dataset_train, dataset_val
 
 def split_single_dataset(dataset_train, dataset_val, args):
-    nb_classes = len(dataset_val.classes)
-    assert nb_classes % args.num_tasks == 0
-    classes_per_task = nb_classes // args.num_tasks
+    nb_classes = len(dataset_val.classes) # [0,1,2,3,4,5,6,7,8,9] -> 10
+    assert nb_classes % args.num_tasks == 0 # 10 % 5 = 0
+    classes_per_task = nb_classes // args.num_tasks # 10 // 5 = 2
 
-    labels = [i for i in range(nb_classes)]
+    labels = [i for i in range(nb_classes)] # [0,1,2,3,4,5,6,7,8,9]
     
-    split_datasets = list()
-    mask = list()
+    split_datasets = list() # [[train, val], [train, val], [train, val], [train, val], [train, val]]
+    mask = list() # [[0,1], [2,3], [4,5], [6,7], [8,9]]
 
     if args.shuffle:
         random.shuffle(labels)
 
-    for _ in range(args.num_tasks):
-        train_split_indices = list()
-        test_split_indices = list()
+    for _ in range(args.num_tasks): # 5
+        train_split_indices = list()  # [0,1]
+        test_split_indices = list() # [2,3,4,5,6,7,8,9]
         
-        scope = labels[:classes_per_task]
-        labels = labels[classes_per_task:]
+        scope = labels[:classes_per_task] # [0,1]
+        labels = labels[classes_per_task:] # [2,3,4,5,6,7,8,9]
 
         mask.append(scope)
 
-        for k in range(len(dataset_train.targets)):
+        #학습 데이터셋과 검증 데이터셋의 각 샘플에 대해, 해당 샘플의 레이블이 현재 scope에 속하면 그 인덱스를 선택
+        for k in range(len(dataset_train.targets)): 
             if int(dataset_train.targets[k]) in scope:
                 train_split_indices.append(k)
                 
         for h in range(len(dataset_val.targets)):
             if int(dataset_val.targets[h]) in scope:
                 test_split_indices.append(h)
-        
+
+        #선택된 인덱스들을 이용해 torch.utils.data.Subset을 생성하고, 이 서브셋을 현재 태스크의 학습/검증 데이터로 사용
         subset_train, subset_val =  Subset(dataset_train, train_split_indices), Subset(dataset_val, test_split_indices)
 
         split_datasets.append([subset_train, subset_val])
