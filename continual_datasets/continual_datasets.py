@@ -317,6 +317,25 @@ class SVHN(datasets.SVHN):
     def extra_repr(self) -> str:
         return "Split: {split}".format(**self.__dict__)
 
+class EMNIST_RGB(datasets.EMNIST):
+    def __init__(self, root, split='letters', train=True, transform=None, target_transform=None, download=False):
+        super(EMNIST_RGB, self).__init__(root, split=split, train=train, transform=transform, target_transform=target_transform, download=download)
+    
+    def __getitem__(self, index):
+        img, target = self.data[index], int(self.targets[index])
+        try:
+            img = Image.fromarray(img.numpy(), mode='L').convert('RGB')
+        except Exception as e:
+            print("이미지 변환 중 오류 발생:", e)
+            
+        if self.transform is not None:
+            img = self.transform(img)
+
+        if self.target_transform is not None:
+            target = self.target_transform(target)
+
+        return img, target
+
 class CORe50(torch.utils.data.Dataset):
     def __init__(self, root, train=True, transform=None, target_transform=None, download=False, mode='cil'):        
         self.root = os.path.expanduser(root)
