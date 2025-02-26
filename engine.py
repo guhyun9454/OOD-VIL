@@ -364,7 +364,8 @@ class Engine():
         print(result_str)
         return test_stats
     
-    def flatten_parameters(self,modules):
+
+    def flatten_parameters(self,modules): #모든 adapter blocks의 파라미터를 쭉 1차원 벡터로 펼침
         flattened_params = []
        
         for m in modules:
@@ -467,12 +468,12 @@ class Engine():
                     for p in c.parameters():
                         p.requires_grad=False
       
-        cur_adapters = model.get_adapter()
-        self.cur_adapters = self.flatten_parameters(cur_adapters)
+        cur_adapters = model.get_adapter() #vit blocks들에서 adapters들만 모아둔 modulelist
+        self.cur_adapters = self.flatten_parameters(cur_adapters) # adapters 파라미터들을 1차원 벡터로 펼침
         vector=self.cur_adapters - self.prev_adapters
         # if task_id>0: #? 1
         self.adapter_vec.append(vector)
-        self.adapter_vec_label.append(self.task_type)
+        self.adapter_vec_label.append(self.task_type) #CIL or DIL
         self.cluster_adapters()
                  
     def train_and_evaluate(self, model: torch.nn.Module, criterion, data_loader: Iterable, optimizer: torch.optim.Optimizer, 
