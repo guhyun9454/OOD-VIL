@@ -90,7 +90,7 @@ def build_continual_dataloader(args):
 
     elif mode in ['dil', 'vil']:
         if 'iDigits' in args.dataset:
-            dataset_list = ['MNIST', 'SVHN', 'MNISTM', 'SynDigit']
+            dataset_list = ['MNIST', 'SVHN', 'MNISTM', 'SynDigit', 'EMNIST']
             splited_dataset = list()
 
             for i in range(len(dataset_list)):
@@ -215,8 +215,53 @@ def get_dataset(dataset, transform_train, transform_val, mode, args,):
         dataset_train = SynDigit(args.data_path, train=True, download=True, transform=transform_train)
         dataset_val = SynDigit(args.data_path, train=False, download=True, transform=transform_val)
 
+    elif dataset == 'EMNIST':
+        dataset_train = EMNIST_RGB(args.data_path, split='letters', train=True, download=True, transform=transform_train)
+        dataset_val = EMNIST_RGB(args.data_path, split='letters', train=False, download=True, transform=transform_val)
+
     else:
         raise ValueError('Dataset {} not found.'.format(dataset))
+    
+    if args.verbose:
+        divider = "=" * 60
+        print(divider)
+        print(f"Dataset: {dataset}")
+        # Train dataset 정보 출력
+        if isinstance(dataset_train, list):
+            total_train = sum(len(ds) for ds in dataset_train)
+            print(f"Train dataset total size: {total_train}")
+            for i, ds in enumerate(dataset_train):
+                try:
+                    classes = ds.classes
+                    print(f"  Sub-dataset {i}: size {len(ds)}, {len(classes)} classes, classes: {classes}")
+                except AttributeError:
+                    print(f"  Sub-dataset {i}: size {len(ds)}")
+        else:
+            print(f"Train dataset size: {len(dataset_train)}")
+            try:
+                print(f"Number of classes: {len(dataset_train.classes)}")
+                print(f"Classes: {dataset_train.classes}")
+            except AttributeError:
+                pass
+
+        # Validation dataset 정보 출력
+        if isinstance(dataset_val, list):
+            total_val = sum(len(ds) for ds in dataset_val)
+            print(f"Validation dataset total size: {total_val}")
+            for i, ds in enumerate(dataset_val):
+                try:
+                    classes = ds.classes
+                    print(f"  Sub-dataset {i}: size {len(ds)}, {len(classes)} classes, classes: {classes}")
+                except AttributeError:
+                    print(f"  Sub-dataset {i}: size {len(ds)}")
+        else:
+            print(f"Validation dataset size: {len(dataset_val)}")
+            try:
+                print(f"Number of classes: {len(dataset_val.classes)}")
+                print(f"Classes: {dataset_val.classes}")
+            except AttributeError:
+                pass
+        print(divider)
     
     return dataset_train, dataset_val
 

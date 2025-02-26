@@ -23,7 +23,7 @@ git clone git@github.com/KHU-AGI/VIL.git
 cd VIL
 conda create -n VIL python==3.8
 conda activate VIL
-pip install torch==1.12.1+cu113 torchvision==0.13.1+cu113 torchaudio==0.12.1 --extra-index-url https://download.pytorch.org/whl/cu113
+pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu113
 pip install -r requirements.txt
 ```
 
