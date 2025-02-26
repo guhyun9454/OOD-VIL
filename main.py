@@ -52,6 +52,9 @@ def main(args):
     
     
     data_loader, class_mask, domain_list = build_continual_dataloader(args)
+    #class_mask =  ([8, 9], [0, 1], [8, 9], [8, 9], [8, 9], [6, 7], [0, 1], [6, 7], [2, 3], [4, 5], [4, 5], [0, 1], [2, 3], [2, 3], [4, 5], [2, 3], [4, 5], [6, 7], [0, 1], [6, 7])
+    #domain_list = ('D3', 'D1', 'D2', 'D0', 'D1', 'D2', 'D3', 'D3', 'D1', 'D2', 'D3', 'D2', 'D0', 'D2', 'D0', 'D3', 'D1', 'D1', 'D0', 'D0')
+    #len(data_loader) = 20
 
     if args.task_info:
         print(f"{'TASK INFO':=^60}")

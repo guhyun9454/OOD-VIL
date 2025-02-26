@@ -41,7 +41,7 @@ from timm.models._builder import build_model_with_cfg
 from timm.models._manipulate import named_apply, checkpoint_seq, adapt_input_conv
 
 __all__ = ['VisionTransformer']  # model_registry will add each entrypoint fn to this
-
+#import *을 수행할 경우 VisionTransformer만 외부에서 보이도록 제한
 
 _logger = logging.getLogger(__name__)
 

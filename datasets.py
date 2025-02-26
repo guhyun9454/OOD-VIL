@@ -60,15 +60,21 @@ def build_continual_dataloader(args):
                 for i in range(len(splited_dataset)):
                     train.append(splited_dataset[i][0])
                     val.append(splited_dataset[i][1])
-
+            
+            #mask = [[[0,1], [2,3], [4,5], [6,7], [8,9]] , [[0,1], [2,3], [4,5], [6,7], [8,9]], ...] 4개의 데이터셋에 대해 각각의 태스크별 클래스 마스크
+            #train = [train, train, ... ] 20개
+            #val = [val, val, ... ] 20개
+                    
             splited_dataset = list()
-            for i in range(args.num_tasks):
+            for i in range(args.num_tasks): #5  
                 t = [train[i+args.num_tasks*j] for j in range(len(dataset_list))]
                 v = [val[i+args.num_tasks*j] for j in range(len(dataset_list))]
                 splited_dataset.append((torch.utils.data.ConcatDataset(t), torch.utils.data.ConcatDataset(v)))
 
+            #splited_dataset = [(train, val), (train, val), (train, val), (train, val), (train, val)]
+            #class_mask = [[0,1], [2,3], [4,5], [6,7], [8,9]]
             args.nb_classes = len(splited_dataset[0][1].datasets[0].dataset.classes)
-            class_mask = np.unique(np.array(mask), axis=0).tolist()[0]
+            class_mask = np.unique(np.array(mask), axis=0).tolist()[0] 
         
         else:
             dataset_train, dataset_val = get_dataset(
@@ -96,7 +102,7 @@ def build_continual_dataloader(args):
                     args=args,
                 )
                 splited_dataset.append((dataset_train, dataset_val))
-            
+            #splited_dataset = [(train, val), (train, val), (train, val), (train, val)] 각 d0,d1,d2,d3
             args.nb_classes = len(dataset_val.classes)
         
         else:
@@ -250,13 +256,14 @@ def split_single_dataset(dataset_train, dataset_val, args):
 
         split_datasets.append([subset_train, subset_val])
     
-    return split_datasets, mask
+    return split_datasets, mask # [[train, val], [train, val], ...], [[0,1], [2,3], [4,5], [6,7], [8,9]]
 
 def build_vil_scenario(splited_dataset, args):
     datasets = list()
     class_mask = list()
     domain_list = list()
 
+    #splited_dataset = [(train, val), (train, val), (train, val), (train, val)] 각 d0,d1,d2,d3
     for i in range(len(splited_dataset)):
         dataset, mask = split_single_dataset(splited_dataset[i][0], splited_dataset[i][1], args)
         datasets.append(dataset)
