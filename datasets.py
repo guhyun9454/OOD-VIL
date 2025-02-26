@@ -90,7 +90,7 @@ def build_continual_dataloader(args):
 
     elif mode in ['dil', 'vil']:
         if 'iDigits' in args.dataset:
-            dataset_list = ['MNIST', 'SVHN', 'MNISTM', 'SynDigit', 'EMNIST']
+            dataset_list = ['MNIST', 'SVHN', 'MNISTM', 'SynDigit']
             splited_dataset = list()
 
             for i in range(len(dataset_list)):
@@ -216,8 +216,8 @@ def get_dataset(dataset, transform_train, transform_val, mode, args,):
         dataset_val = SynDigit(args.data_path, train=False, download=True, transform=transform_val)
 
     elif dataset == 'EMNIST':
-        dataset_train = EMNIST_RGB(args.data_path, split='letters', train=True, download=True, transform=transform_train)
-        dataset_val = EMNIST_RGB(args.data_path, split='letters', train=False, download=True, transform=transform_val)
+        dataset_train = EMNIST_RGB(args.data_path, train=True, download=True, transform=transform_train, random_seed=args.seed, num_random_classes=10, split='letters')
+        dataset_val = EMNIST_RGB(args.data_path, train=False, download=True, transform=transform_val, random_seed=args.seed, num_random_classes=10, split='letters')
 
     else:
         raise ValueError('Dataset {} not found.'.format(dataset))
