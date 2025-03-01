@@ -251,7 +251,7 @@ if __name__ == '__main__':
 
     # Misc (기타) parameters
     parser.add_argument('--task_info', action='store_true', help='Print tasks only and skip training')
-    parser.add_argument('--print_freq', type=int, default=10, help = 'The frequency of printing')
+    parser.add_argument('--print_freq', type=int, default=1000, help = 'The frequency of printing')
     parser.add_argument('--develop', action='store_true', default=False)
     parser.add_argument('--verbose', action='store_true', default=False)
 
