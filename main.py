@@ -135,7 +135,8 @@ def main(args):
                 return
             _ = engine.evaluate_till_now(model, data_loader, device, 
                                             task_id, class_mask, acc_matrix, args,)
-        
+        if args.verbose:
+            print(acc_matrix)
         return
     
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)

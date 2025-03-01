@@ -353,11 +353,11 @@ class Engine():
         avg_stat = np.divide(np.sum(stat_matrix, axis=1), task_id+1)
 
         diagonal = np.diag(acc_matrix)
-
-        result_str = "[Average accuracy till task{}]\tAcc@1: {:.4f}\tAcc@5: {:.4f}\tLoss: {:.4f}".format(task_id+1, avg_stat[0], avg_stat[1], avg_stat[2])
+        A_avg = np.mean(acc_matrix[np.triu_indices(task_id+1)])
+        result_str = "[Average accuracy till task{}]\tA_last: {:.4f}\tA_avg: {:.4f}".format(task_id+1, avg_stat[0],A_avg)
+        # result_str = "[Average accuracy till task{}]\tAcc@1: {:.4f}\tAcc@5: {:.4f}\tLoss: {:.4f}".format(task_id+1, avg_stat[0], avg_stat[1], avg_stat[2])
         if task_id > 0:
-            forgetting = np.mean((np.max(acc_matrix, axis=1) -
-                                acc_matrix[:, task_id])[:task_id])
+            forgetting = np.mean((np.max(acc_matrix, axis=1) - acc_matrix[:, task_id])[:task_id])
             backward = np.mean((acc_matrix[:, task_id] - diagonal)[:task_id])
 
             result_str += "\tForgetting: {:.4f}\tBackward: {:.4f}".format(forgetting, backward)

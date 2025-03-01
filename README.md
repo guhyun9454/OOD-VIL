@@ -29,5 +29,4 @@ pip install -r requirements.txt
 
 ## Run ICON on VIL with iDigits dataset
 ```bash
-python main.py --dataset iDigits --num_tasks 5 --seed 42 --versatile_inc --batch-size 24 --IC --thre 0.0 --beta 0.01 --use_cast_loss --k 2 --d_threshold
-```
+python main.py --dataset iDigits --num_tasks 5 --seed 42 --batch-size 24 --IL_mode vil --model vit_base_patch16_224_ICON --method ICON --IC --thre 0.0 --beta 0.01 --use_cast_loss --k 2 --d_threshold  --develop --verbose```
