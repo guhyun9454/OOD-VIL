@@ -14,7 +14,6 @@ from timm.scheduler import create_scheduler
 from timm.optim import create_optimizer
 
 from datasets import build_continual_dataloader
-from engine import Engine
 import models #여기서 models.py의 @register_model이 실행되고, timm의 모델 레지스트리에 등록, create_model를 통해 custom vit가 호출됨
 import utils
 import os
@@ -74,27 +73,51 @@ def main(args):
         print(f"{'':=^60}")
         return 
 
-    model = create_model(
-        args.model, #vit_base_patch16_224
-        pretrained=args.pretrained, #True
-        num_classes=args.nb_classes, #10
-        drop_rate=args.drop, #0.0
-        drop_path_rate=args.drop_path, #0.0
-        drop_block_rate=None,
-        adapt_blocks=args.adapt_blocks, #[0, 1, 2, 3, 4]
-    )
+    
 
+    
+    if args.method == 'ICON':
+        from engines.ICONengine import Engine
+        assert args.model == "vit_base_patch16_224_ICON"
+        model = create_model(
+            args.model, #vit_base_patch16_224_ICON
+            pretrained=args.pretrained, #True
+            num_classes=args.nb_classes, #10
+            drop_rate=args.drop, #0.0
+            drop_path_rate=args.drop_path, #0.0
+            drop_block_rate=None,
+            adapt_blocks=args.adapt_blocks, #[0, 1, 2, 3, 4]
+        )
+        for n, p in model.named_parameters():
+            p.requires_grad = False
+            if 'adapter' in n:
+                p.requires_grad = True
+            if 'head' in n:
+                p.requires_grad = True
+    elif args.method == 'FT':
+        from engines.FTengine import Engine
+        assert args.model == "vit_base_patch16_224"
+        model = create_model(
+            args.model,               # "vit_base_patch16_224" (기본 FT 모델)
+            pretrained=args.pretrained,
+            num_classes=args.nb_classes,
+            drop_rate=args.drop,
+            drop_path_rate=args.drop_path,
+            drop_block_rate=None,
+        )
+        for n, p in model.named_parameters():
+            if 'head' in n:
+                p.requires_grad = True
+            else:
+                p.requires_grad = False
+
+    else:
+        raise ValueError(f"Unknown engine type: {args.engine}")
+    
     model.to(device)
-
-
     engine = Engine(model=model,device=device, class_mask=class_mask, domain_list=domain_list, args=args)
     
-    for n, p in model.named_parameters():
-        p.requires_grad = False
-        if 'adapter' in n:
-            p.requires_grad = True
-        if 'head' in n:
-            p.requires_grad = True
+
 
     print(args)
     
@@ -144,6 +167,7 @@ if __name__ == '__main__':
     parser.add_argument('--epochs', default=5, type=int)
 
     # Model parameters
+    parser.add_argument('--method', default='ICON', type=str, help='Engine type to use (e.g., ICON, FT)')
     parser.add_argument('--model', default='vit_base_patch16_224', type=str, metavar='MODEL', help='Name of model to train')
     parser.add_argument('--input-size', default=224, type=int, help='images input size')
     parser.add_argument('--pretrained', default=True, help='Load pretrained model or not')
