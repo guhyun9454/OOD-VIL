@@ -211,10 +211,12 @@ if __name__ == '__main__':
     # Continual learning parameters
     parser.add_argument('--num_tasks', default=10, type=int, help='number of sequential tasks')
     parser.add_argument('--train_mask', default=True, type=bool, help='if using the class mask at training')
-    parser.add_argument('--task_inc', action='store_true', default=False, help='if doing task incremental')
-    parser.add_argument('--domain_inc', action='store_true', default=False, help='if doing domain incremental')
-    parser.add_argument('--versatile_inc', action='store_true', default=False, help='if doing versatile incremental')
-    parser.add_argument('--joint_train', default=False, help='if doing joint training')
+    # parser.add_argument('--task_inc', action='store_true', default=False, help='if doing task incremental')
+    # parser.add_argument('--domain_inc', action='store_true', default=False, help='if doing domain incremental')
+    # parser.add_argument('--versatile_inc', action='store_true', default=False, help='if doing versatile incremental')
+    # parser.add_argument('--joint_train', default=False, help='if doing joint training')
+    parser.add_argument('--IL_mode', type=str, default='cil', choices=['cil', 'dil', 'vil', 'ood_vil', 'joint'], help='Incremental Learning mode')
+
 
     # Prompt parameters
     parser.add_argument('--adapt_blocks', default=[0, 1, 2, 3, 4])
