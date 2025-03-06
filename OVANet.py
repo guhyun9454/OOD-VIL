@@ -64,6 +64,9 @@ class OVANet(nn.Module):
          open_logits  : [B, num_known, 2] (각 known 클래스에 대해 inlier/unknown 점수)
         """
         feat = self.vit.forward_features(x)
+        if feat.dim() > 2:
+            print(" dim > 2")
+            feat = feat.view(feat.size(0), -1)
         closed_logits = self.closed_fc(feat)
         open_logits = self.open_fc(feat)
         open_logits = open_logits.view(-1, self.num_known, 2)
