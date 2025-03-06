@@ -1,6 +1,7 @@
 import argparse
 import os
 import numpy as np
+import warnings
 
 import torch
 import torch.nn as nn
@@ -189,6 +190,7 @@ def get_dataset(name, train, data_path, transform):
         raise ValueError(f"지원하지 않는 데이터셋: {name}")
 
 def main():
+    warnings.filterwarnings("ignore", category=UserWarning, module="torch")
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_path', type=str, default='/local_datasets')
     parser.add_argument('--train_dataset', type=str, default='mnist', help='학습에 사용할 데이터셋 (예: mnist)')
