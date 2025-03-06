@@ -248,6 +248,7 @@ def main():
     test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4)
 
     model = OVANet(num_known=args.num_known, model_name=args.model_name)
+    model.to(device)
     optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr)
 
     print("===== Training OVANet =====")
