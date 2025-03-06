@@ -190,9 +190,9 @@ def get_dataset(name, train, data_path, transform):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data_path', type=str, default='./data')
+    parser.add_argument('--data_path', type=str, default='/local_datasets')
     parser.add_argument('--train_dataset', type=str, default='mnist', help='학습에 사용할 데이터셋 (예: mnist)')
-    parser.add_argument('--test_known_dataset', type=str, default='mnist', help='테스트용 known 데이터셋 (예: mnist)')
+    parser.add_argument('--test_known_dataset', type=str, default='mnist', help='테스트용 known 데이터셋 (예: mnist)') # 나중에 클래스 이름으로 변경 
     parser.add_argument('--test_unknown_dataset', type=str, default='emnist', help='테스트용 unknown 데이터셋 (예: emnist)')
     parser.add_argument('--epochs', type=int, default=3)
     parser.add_argument('--batch_size', type=int, default=64)
@@ -203,6 +203,7 @@ def main():
     parser.add_argument('--device', type=str, default='cuda')
     parser.add_argument('--seed', type=int, default=42, help='Random seed for reproducibility')
     args = parser.parse_args()
+    #utils로 옮기기
     seed = args.seed
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
