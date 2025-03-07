@@ -1,7 +1,6 @@
 import os
 import re
 import pandas as pd
-import ace_tools as tools
 
 log_dir = "logs"
 log_files = [f for f in os.listdir(log_dir) if f.endswith('.out')]
@@ -41,6 +40,6 @@ for file in log_files:
 
 df = pd.DataFrame(data)
 df = df.sort_values(by="H-score", ascending=False)
-df.to_csv("log_summary_sorted.csv", index=False)
+df.to_csv(f"{log_dir}/log_summary_sorted.csv", index=False)
 
-tools.display_dataframe_to_user(name="Sorted Log Summary", dataframe=df)
+print(df)
