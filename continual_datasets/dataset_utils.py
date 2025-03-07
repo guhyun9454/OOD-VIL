@@ -19,6 +19,39 @@ import codecs
 
 from torch.utils.model_zoo import tqdm
 
+class UnknownWrapper(torch.utils.data.Dataset):
+    """
+    원본 데이터셋의 라벨을 모두 unknown_label(= num_known)로 변경합니다.
+    """
+    def __init__(self, dataset, unknown_label):
+        self.dataset = dataset
+        self.unknown_label = unknown_label
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, index):
+        x, _ = self.dataset[index]
+        return x, self.unknown_label
+
+class RandomSampleWrapper(torch.utils.data.Dataset):
+    """
+    주어진 데이터셋에서 num_samples만큼 랜덤으로 샘플링하여 반환합니다.
+    """
+    def __init__(self, dataset, num_samples, seed=None):
+        self.dataset = dataset
+        self.num_samples = num_samples
+        if seed is not None:
+            np.random.seed(seed)
+        # replacement 없이 num_samples 개의 인덱스 선택
+        self.indices = np.random.choice(len(dataset), size=num_samples, replace=False)
+
+    def __len__(self):
+        return len(self.indices)
+
+    def __getitem__(self, index):
+        return self.dataset[self.indices[index]]
+
 
 def gen_bar_updater():
     pbar = tqdm(total=None)

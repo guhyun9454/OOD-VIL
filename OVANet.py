@@ -8,25 +8,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 import timm
 import torchvision.transforms as transforms
-from torch.utils.data import DataLoader, Subset, ConcatDataset
-import random
-
+from torch.utils.data import DataLoader, ConcatDataset
+from utils import seed_everything
 from sklearn.metrics import confusion_matrix
 
-from continual_datasets.continual_datasets import MNIST_RGB, EMNIST_RGB
-
-class UnknownWrapper(torch.utils.data.Dataset):
-    """
-    원본 데이터셋의 라벨을 모두 unknown_label(= num_known)로 변경.
-    """
-    def __init__(self, dataset, unknown_label):
-        self.dataset = dataset
-        self.unknown_label = unknown_label
-    def __len__(self):
-        return len(self.dataset)
-    def __getitem__(self, index):
-        x, _ = self.dataset[index]
-        return x, self.unknown_label
+import continual_datasets.continual_datasets as cd
+from continual_datasets.dataset_utils import UnknownWrapper, RandomSampleWrapper
 
 class OVANet(nn.Module):
     def __init__(self, num_known=10, model_name='vit_base_patch16_224'):
@@ -64,7 +51,7 @@ class OVANet(nn.Module):
          closed_logits: [B, num_known]
          open_logits  : [B, num_known, 2] (각 known 클래스에 대해 inlier/unknown 점수)
         """
-        feat = self.vit.forward_features(x)[:,0]
+        feat = self.vit.forward_features(x)[:, 0]
         closed_logits = self.closed_fc(feat)
         open_logits = self.open_fc(feat)
         open_logits = open_logits.view(-1, self.num_known, 2)
@@ -80,21 +67,16 @@ def compute_ova_loss(out_open, labels, num_known):
         positive loss = -log( p_inlier(correct_class) )
         negative loss = max_{c != true} -log( 1 - p_inlier(c) )
     """
-    # reshape: [B, 2, num_known]
-    out_open = out_open.transpose(1, 2)
-    # softmax along channel 1 (2-dimensional)
-    p_open = F.softmax(out_open, dim=1)  # [B, 2, num_known]
+    out_open = out_open.transpose(1, 2)  # [B, 2, num_known]
+    p_open = F.softmax(out_open, dim=1)   # [B, 2, num_known]
     B = labels.size(0)
-    # one-hot for true class: shape [B, num_known]
     one_hot = torch.zeros(B, num_known, device=labels.device)
     one_hot.scatter_(1, labels.unsqueeze(1), 1)
-    # positive loss: for each sample, only true class contributes
-    pos_loss = -torch.log(p_open[:, 1, :] + 1e-8)  # [B, num_known]
-    pos_loss = (pos_loss * one_hot).sum(dim=1)  # [B]
-    # negative loss: for non-true classes
-    neg_loss = -torch.log(p_open[:, 0, :] + 1e-8)  # [B, num_known]
+    pos_loss = -torch.log(p_open[:, 1, :] + 1e-8)
+    pos_loss = (pos_loss * one_hot).sum(dim=1)
+    neg_loss = -torch.log(p_open[:, 0, :] + 1e-8)
     neg_loss = neg_loss * (1 - one_hot)
-    neg_loss, _ = neg_loss.max(dim=1)  # [B]
+    neg_loss, _ = neg_loss.max(dim=1)
     return pos_loss.mean(), neg_loss.mean()
 
 def train_ovanet(model, train_loader, optimizer, device, epochs=3, log_interval=50, num_known=10):
@@ -120,7 +102,7 @@ def train_ovanet(model, train_loader, optimizer, device, epochs=3, log_interval=
             total_loss += loss.item()
             step_count += 1
 
-            if (batch_idx+1) % log_interval == 0:
+            if (batch_idx + 1) % log_interval == 0:
                 print(f"Epoch [{epoch+1}/{epochs}] Batch [{batch_idx+1}/{len(train_loader)}] "
                       f"CE Loss: {total_ce/step_count:.4f} OVA Loss: {total_ova/step_count:.4f} Total Loss: {total_loss/step_count:.4f}")
     return model
@@ -147,6 +129,7 @@ def test_ovanet(model, test_loader, device, threshold=0.5):
             for i in range(B):
                 c = cand[i].item()
                 p_inlier = p_open[i, 1, c].item()  # inlier 확률 for candidate
+                p_inlier = p_open[i, 1, c].item()
                 if p_inlier < threshold:
                     y_pred.append(model.num_known)  # unknown
                 else:
@@ -173,29 +156,20 @@ def compute_hscore(y_true, y_pred, num_known):
     h = 2 * (acc_known * acc_unknown) / (acc_known + acc_unknown)
     return h, acc_known, acc_unknown
 
-def get_dataset(name, train, data_path, transform):
-    """
-    name: 문자열, 'mnist' 또는 'emnist' (대소문자 무시)
-    train: bool, train 여부
-    data_path: 데이터 저장 경로
-    transform: transform 적용
-    """
-    name = name.lower()
-    if name == 'mnist':
-        return MNIST_RGB(data_path, train=train, download=True, transform=transform)
-    elif name == 'emnist':
-        # EMNIST_RGB: split='letters', num_random_classes=10 (알파벳 10종류)
-        return EMNIST_RGB(data_path, split='letters', train=train, download=True, transform=transform, random_seed=42, num_random_classes=10)
+def get_dataset(dataset_class_name, train, data_path, transform, **kwargs):
+    if hasattr(cd, dataset_class_name):
+        dataset_cls = getattr(cd, dataset_class_name)
     else:
-        raise ValueError(f"지원하지 않는 데이터셋: {name}")
+        raise ValueError(f"Dataset class {dataset_class_name} not found in continual_datasets.")
+    return dataset_cls(data_path, train=train, download=True, transform=transform, **kwargs)
 
 def main():
     warnings.filterwarnings("ignore", category=UserWarning)    
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_path', type=str, default='/local_datasets')
-    parser.add_argument('--train_dataset', type=str, default='mnist', help='학습에 사용할 데이터셋 (예: mnist)')
-    parser.add_argument('--test_known_dataset', type=str, default='mnist', help='테스트용 known 데이터셋 (예: mnist)') # 나중에 클래스 이름으로 변경 
-    parser.add_argument('--test_unknown_dataset', type=str, default='emnist', help='테스트용 unknown 데이터셋 (예: emnist)')
+    parser.add_argument('--train_dataset', type=str, default='MNIST_RGB', help='학습에 사용할 데이터셋 클래스 이름 (예: MNIST_RGB)')
+    parser.add_argument('--test_known_dataset', type=str, default='MNIST_RGB', help='테스트용 known 데이터셋 클래스 이름 (예: MNIST_RGB)')
+    parser.add_argument('--test_unknown_dataset', type=str, default='EMNIST_RGB', help='테스트용 unknown 데이터셋 클래스 이름 (예: EMNIST_RGB)')
     parser.add_argument('--epochs', type=int, default=3)
     parser.add_argument('--batch_size', type=int, default=64)
     parser.add_argument('--lr', type=float, default=1e-3)
@@ -205,46 +179,38 @@ def main():
     parser.add_argument('--device', type=str, default='cuda')
     parser.add_argument('--seed', type=int, default=42, help='Random seed for reproducibility')
     args = parser.parse_args()
-    #utils로 옮기기
-    seed = args.seed
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    np.random.seed(seed)
-    random.seed(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-
+    seed_everything(args.seed)
 
     device = torch.device(args.device if torch.cuda.is_available() else 'cpu')
 
-    # 이미지 전처리: ViT 입력 크기에 맞게 Resize, CenterCrop, ToTensor, Normalize
     train_transform = transforms.Compose([
         transforms.Resize(256),
         transforms.RandomCrop(224),
         transforms.RandomHorizontalFlip(),
         transforms.ToTensor(),
-        transforms.Normalize([0.485,0.456,0.406], [0.229,0.224,0.225])
+        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     ])
     test_transform = transforms.Compose([
         transforms.Resize(256),
         transforms.CenterCrop(224),
         transforms.ToTensor(),
-        transforms.Normalize([0.485,0.456,0.406], [0.229,0.224,0.225])
+        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     ])
 
     train_dataset = get_dataset(args.train_dataset, train=True, data_path=args.data_path, transform=train_transform)
-    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=4)
-
     test_known = get_dataset(args.test_known_dataset, train=False, data_path=args.data_path, transform=test_transform)
     test_unknown = get_dataset(args.test_unknown_dataset, train=False, data_path=args.data_path, transform=test_transform)
+
+    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=4)
+    
+    # unknown dataset의 라벨을 모두 num_known 값으로 변경
     test_unknown = UnknownWrapper(test_unknown, unknown_label=args.num_known)
-
-    # 두 테스트 데이터셋의 샘플 수를 같게 맞춤
+    
+    # 두 테스트 데이터셋의 샘플 수를 랜덤하게 맞추기 위해 RandomSampleWrapper 사용
     n_samples = min(len(test_known), len(test_unknown))
-    indices = np.arange(n_samples)
-
-    test_known_subset = Subset(test_known, indices)
-    test_unknown_subset = Subset(test_unknown, indices)
+    test_known_subset = RandomSampleWrapper(test_known, num_samples=n_samples, seed=args.seed)
+    test_unknown_subset = RandomSampleWrapper(test_unknown, num_samples=n_samples, seed=args.seed + 1)
+    
     # 두 데이터셋을 합쳐서 test dataset 구성
     test_dataset = ConcatDataset([test_known_subset, test_unknown_subset])
     test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4)
@@ -260,7 +226,7 @@ def main():
     y_true, y_pred = test_ovanet(model, test_loader, device, threshold=args.threshold)
     h_score, acc_known, acc_unknown = compute_hscore(y_true, y_pred, args.num_known)
     print(f"H-score: {h_score:.4f} | Known Accuracy: {acc_known:.4f} | Unknown Accuracy: {acc_unknown:.4f}")
-    cm = confusion_matrix(y_true, y_pred, labels=list(range(args.num_known+1)))
+    cm = confusion_matrix(y_true, y_pred, labels=list(range(args.num_known + 1)))
     print("Confusion Matrix:")
     print(cm)
 

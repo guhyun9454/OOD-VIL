@@ -14,10 +14,10 @@ Mostly copy-paste from torchvision references.
 import io
 import os
 import time
-import math
 from collections import defaultdict, deque
 import datetime
-
+import numpy as np
+import random
 import torch
 import torch.distributed as dist
 
@@ -242,3 +242,13 @@ def init_distributed_mode(args):
                                          world_size=args.world_size, rank=args.rank)
     torch.distributed.barrier()
     setup_for_distributed(args.rank == 0)
+
+
+
+def seed_everything(seed: int = 42):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
