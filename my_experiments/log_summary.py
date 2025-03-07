@@ -1,13 +1,9 @@
 import os
 import re
 import pandas as pd
-import argparse
+import ace_tools as tools
 
-parser = argparse.ArgumentParser()
-parser.add_argument("--log_dir", type=str, default="logs")
-args = parser.parse_args()
-log_dir = args.log_dir
-
+log_dir = "logs"
 log_files = [f for f in os.listdir(log_dir) if f.endswith('.out')]
 
 data = []
@@ -29,20 +25,22 @@ for file in log_files:
     else:
         h_score, known_acc, unknown_acc = None, None, None
 
-    # Confusion Matrix 추출 (여러 줄에 걸쳐 있는 경우)
-    cm_match = re.search(
-        r'Confusion Matrix:\n((?:\[[^\]]*\]\n?)+)', content, 
-        re.DOTALL
-    )
-    confusion_matrix = cm_match.group(1).strip() if cm_match else None
+    # cm_match = re.search(
+    #     r'Confusion Matrix:\n((?:\[[^\]]*\]\n?)+)', content, 
+    #     re.DOTALL
+    # )
+    # confusion_matrix = cm_match.group(1).strip() if cm_match else None
 
     data.append({
         "Filename": file,
         "H-score": h_score,
         "Known Accuracy": known_acc,
         "Unknown Accuracy": unknown_acc,
-        "Confusion Matrix": confusion_matrix
+        # "Confusion Matrix": confusion_matrix
     })
 
 df = pd.DataFrame(data)
-print(df)
+df = df.sort_values(by="H-score", ascending=False)
+df.to_csv("log_summary_sorted.csv", index=False)
+
+tools.display_dataframe_to_user(name="Sorted Log Summary", dataframe=df)
