@@ -78,6 +78,8 @@ def build_continual_dataloader(args):
             #class_mask = [[0,1], [2,3], [4,5], [6,7], [8,9]]
             args.nb_classes = len(splited_dataset[0][1].datasets[0].dataset.classes)
             class_mask = np.unique(np.array(mask), axis=0).tolist()[0] 
+            #domain_list = ["D0123", "D0123", "D0123", "D0123", "D0123"]
+            domain_list = [f'D{"".join(map(str, range(len(dataset_list))))}'] * args.num_tasks
         
         else:
             dataset_train, dataset_val = get_dataset(
@@ -107,6 +109,9 @@ def build_continual_dataloader(args):
                 splited_dataset.append((dataset_train, dataset_val))
             #splited_dataset = [(train, val), (train, val), (train, val), (train, val)] 각 d0,d1,d2,d3
             args.nb_classes = len(dataset_val.classes)
+            if mode == 'dil':
+                class_mask = [[j for j in range(args.nb_classes)] for i in range(len(splited_dataset)) ]
+                domain_list = [f'D{i}' for i in range(len(splited_dataset)) ]
         
         else:
             dataset_train, dataset_val = get_dataset(
