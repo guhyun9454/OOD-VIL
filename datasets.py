@@ -274,6 +274,7 @@ def get_dataset(dataset, transform_train, transform_val, mode, args,):
     return dataset_train, dataset_val
 
 def split_single_dataset(dataset_train, dataset_val, args):
+    #CIL 세팅
     nb_classes = len(dataset_val.classes) # [0,1,2,3,4,5,6,7,8,9] -> 10
     assert nb_classes % args.num_tasks == 0 # 10 % 5 = 0
     classes_per_task = nb_classes // args.num_tasks # 10 // 5 = 2
@@ -315,7 +316,11 @@ def build_vil_scenario(splited_dataset, args):
     datasets = list()
     class_mask = list()
     domain_list = list()
+    
+    num_tasks = args.num_tasks
 
+    #split_single_dataset에서 cil 세팅을 위해 잠시 num_tasks를 변경
+    args.num_tasks = int(args.num_tasks / len(splited_dataset))
     #splited_dataset = [(train, val), (train, val), (train, val), (train, val)] 각 d0,d1,d2,d3
     for i in range(len(splited_dataset)):
         dataset, mask = split_single_dataset(splited_dataset[i][0], splited_dataset[i][1], args)
@@ -327,7 +332,8 @@ def build_vil_scenario(splited_dataset, args):
     splited_dataset = sum(datasets, [])
     class_mask = sum(class_mask, [])
 
-    args.num_tasks = len(splited_dataset)
+    assert num_tasks == len(splited_dataset)
+    args.num_tasks = num_tasks
 
     zipped = list(zip(splited_dataset, class_mask, domain_list))
     random.shuffle(zipped)
