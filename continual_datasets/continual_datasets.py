@@ -411,29 +411,29 @@ class EMNIST_RGB(EMNIST):
                  random_seed=42, num_random_classes=10):
         super(EMNIST_RGB, self).__init__(root, split=split, train=train, transform=transform,
                                          target_transform=target_transform, download=download)
-        # letters split인 경우 "N/A" (target 0)를 제외한 알파벳(a~z)이 target 1~26로 매핑됨.
-        # num_random_classes가 지정되면, valid target (1~26) 중에서 랜덤으로 선택하여 필터링합니다.
-        if split == 'letters' and num_random_classes is not None:
-            valid_letters = list(string.ascii_lowercase)  # ['a', 'b', ... 'z']
-            valid_targets = np.arange(1, 27)  # 1 ~ 26
-            if random_seed is not None:
-                np.random.seed(random_seed)
-            # 랜덤으로 num_random_classes 개를 샘플링 (중복 없이)
-            sampled = np.random.choice(valid_targets, size=num_random_classes, replace=False)
-            sampled = np.sort(sampled)  # 정렬해서 매핑 순서를 일정하게 유지
-            # self.targets는 torch.Tensor임 (타입: torch.long)
-            target_np = self.targets.numpy()
-            valid_mask = np.isin(target_np, sampled)
-            self.data = self.data[valid_mask]
-            self.targets = self.targets[valid_mask]
-            # 기존 target 값을 0~(num_random_classes-1)로 remap
-            mapping = {old: new for new, old in enumerate(sampled)}
-            new_targets = [mapping[x.item()] for x in self.targets]
-            self.targets = torch.tensor(new_targets, dtype=torch.long)
-            # 클래스 이름 업데이트 (예: target 1 -> 'a', target 3 -> 'c' 등)
-            self.classes = [valid_letters[t - 1] for t in sorted(sampled)]
-        else:
-            raise ValueError("split='letters' and num_random_classes must be specified together.")
+        # # letters split인 경우 "N/A" (target 0)를 제외한 알파벳(a~z)이 target 1~26로 매핑됨.
+        # # num_random_classes가 지정되면, valid target (1~26) 중에서 랜덤으로 선택하여 필터링합니다.
+        # if split == 'letters' and num_random_classes is not None:
+        #     valid_letters = list(string.ascii_lowercase)  # ['a', 'b', ... 'z']
+        #     valid_targets = np.arange(1, 27)  # 1 ~ 26
+        #     if random_seed is not None:
+        #         np.random.seed(random_seed)
+        #     # 랜덤으로 num_random_classes 개를 샘플링 (중복 없이)
+        #     sampled = np.random.choice(valid_targets, size=num_random_classes, replace=False)
+        #     sampled = np.sort(sampled)  # 정렬해서 매핑 순서를 일정하게 유지
+        #     # self.targets는 torch.Tensor임 (타입: torch.long)
+        #     target_np = self.targets.numpy()
+        #     valid_mask = np.isin(target_np, sampled)
+        #     self.data = self.data[valid_mask]
+        #     self.targets = self.targets[valid_mask]
+        #     # 기존 target 값을 0~(num_random_classes-1)로 remap
+        #     mapping = {old: new for new, old in enumerate(sampled)}
+        #     new_targets = [mapping[x.item()] for x in self.targets]
+        #     self.targets = torch.tensor(new_targets, dtype=torch.long)
+        #     # 클래스 이름 업데이트 (예: target 1 -> 'a', target 3 -> 'c' 등)
+        #     self.classes = [valid_letters[t - 1] for t in sorted(sampled)]
+        # else:
+        #     raise ValueError("split='letters' and num_random_classes must be specified together.")
 
     def __getitem__(self, index):
         img, target = self.data[index], int(self.targets[index])
@@ -446,6 +446,27 @@ class EMNIST_RGB(EMNIST):
         if self.target_transform is not None:
             target = self.target_transform(target)
         return img, target
+
+class FashionMNIST_RGB(datasets.FashionMNIST):
+    def __init__(self, root, train=True, transform=None, target_transform=None, download=False):
+        super(FashionMNIST_RGB, self).__init__(root, train=train, transform=transform,
+                                                 target_transform=target_transform, download=download)
+        self.train = train
+        self.classes = ['T-shirt/top', 'Trouser', 'Pullover', 'Dress', 'Coat',
+                        'Sandal', 'Shirt', 'Sneaker', 'Bag', 'Ankle boot']
+
+    def __getitem__(self, index: int):
+        img, target = self.data[index], int(self.targets[index])
+        try:
+            img = Image.fromarray(img.numpy(), mode='L').convert('RGB')
+        except Exception as e:
+            print("이미지 변환 중 오류 발생:", e)
+        if self.transform is not None:
+            img = self.transform(img)
+        if self.target_transform is not None:
+            target = self.target_transform(target)
+        return img, target
+
 
 class CORe50(torch.utils.data.Dataset):
     def __init__(self, root, train=True, transform=None, target_transform=None, download=False, mode='cil'):        
