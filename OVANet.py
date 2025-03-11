@@ -17,22 +17,14 @@ from continual_datasets.dataset_utils import UnknownWrapper, RandomSampleWrapper
 
 class OVANet(nn.Module):
     def __init__(self, num_known=10, model_name='vit_base_patch16_224'):
-        """
-           1. Feature Extractor: timm의 ViT (pretrained), 분류 head 제거 후 freeze
-           2. Closed-set classifier (C1): 선형층 → 출력: num_known
-           3. Open-set classifier (C2): 선형층 → 출력: 2*num_known  
-              학습 시 출력은 [B, num_known*2]를 [B, num_known, 2]로 reshape하여 사용
-        """
         super(OVANet, self).__init__()
         self.num_known = num_known
-
-        # Feature extractor: timm의 ViT 사용, 분류 head 제거 후 파라미터 동결
         self.vit = timm.create_model(model_name, pretrained=True)
+        #분류기 제거
         if hasattr(self.vit, 'head'):
             in_features = self.vit.head.in_features
             self.vit.reset_classifier(0)
-        else:
-            raise ValueError("해당 모델에 'head'가 없습니다.")
+
         for p in self.vit.parameters():
             p.requires_grad = False
         self.in_dim = in_features
