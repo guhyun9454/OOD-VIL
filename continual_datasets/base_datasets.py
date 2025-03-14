@@ -9,7 +9,7 @@ from typing import Any, Tuple, Union
 import numpy as np
 import torch
 from torchvision import datasets
-from torchvision.datasets.utils import download_url, check_integrity, verify_str_arg, download_and_extract_archive, extract_archive,
+from torchvision.datasets.utils import download_url, check_integrity, verify_str_arg, download_and_extract_archive, extract_archive
 from PIL import Image
 import tqdm
 from .dataset_utils import read_image_file, read_label_file
@@ -391,7 +391,6 @@ class EMNIST(datasets.MNIST):
                 extract_archive(os.path.join(gzip_folder, gzip_file), self.raw_folder)
         shutil.rmtree(gzip_folder)
 
-    
 class EMNIST_RGB(EMNIST):
     def __init__(self, root, split='letters', train=True, transform=None, target_transform=None, download=False,
                  random_seed=42, num_random_classes=10):
@@ -452,7 +451,6 @@ class FashionMNIST_RGB(datasets.FashionMNIST):
         if self.target_transform is not None:
             target = self.target_transform(target)
         return img, target
-
 
 class CORe50(torch.utils.data.Dataset):
     def __init__(self, root, train=True, transform=None, target_transform=None, download=False, mode='cil'):        

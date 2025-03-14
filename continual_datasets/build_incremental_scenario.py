@@ -8,18 +8,18 @@ from timm.data import create_transform
 
 from continual_datasets.base_datasets import *
 
-import utils
+# import utils
 
-class Lambda(transforms.Lambda):
-    def __init__(self, lambd, nb_classes):
-        super().__init__(lambd)
-        self.nb_classes = nb_classes
+# class Lambda(transforms.Lambda):
+#     def __init__(self, lambd, nb_classes):
+#         super().__init__(lambd)
+#         self.nb_classes = nb_classes
     
-    def __call__(self, img):
-        return self.lambd(img, self.nb_classes)
+#     def __call__(self, img):
+#         return self.lambd(img, self.nb_classes)
 
-def target_transform(x, nb_classes):
-    return x + nb_classes
+# def target_transform(x, nb_classes):
+#     return x + nb_classes
 
 def build_continual_dataloader(args):
     dataloader = list()

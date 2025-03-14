@@ -13,7 +13,7 @@ from timm.models import create_model
 from timm.scheduler import create_scheduler
 from timm.optim import create_optimizer
 
-from datasets import build_continual_dataloader
+from continual_datasets.build_incremental_scenario import build_continual_dataloader
 import models #여기서 models.py의 @register_model이 실행되고, timm의 모델 레지스트리에 등록, create_model를 통해 custom vit가 호출됨
 import utils
 import os
