@@ -12,6 +12,8 @@ from shutil import move, rmtree
 import numpy as np
 
 import torch
+import torch.utils
+import torch.utils.data
 from torchvision import datasets
 from torchvision.datasets.utils import download_url, check_integrity, verify_str_arg, download_and_extract_archive, extract_archive
 

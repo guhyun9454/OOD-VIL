@@ -23,27 +23,15 @@ def target_transform(x, nb_classes):
 
 def build_continual_dataloader(args):
     dataloader = list()
-    # class_mask = list() if args.task_inc or args.train_mask else None
-    class_mask = list() if args.train_mask else None
+    class_mask = None
     domain_list = None
     
     transform_train = build_transform(True, args)
     transform_val = build_transform(False, args)
 
-    # if args.task_inc:
-    #     mode = 'til'
-    # elif args.domain_inc:
-    #     mode = 'dil'
-    # elif args.versatile_inc:
-    #     mode = 'vil'
-    # elif args.joint_train:
-    #     mode = 'joint'
-    # else:
-    #     mode = 'cil'
     mode = args.IL_mode
 
-
-    if mode in ['til', 'cil']:
+    if mode == 'cil':
         if 'iDigits' in args.dataset:
             dataset_list = ['MNIST', 'SVHN', 'MNISTM', 'SynDigit']
             train, val = list(), list()

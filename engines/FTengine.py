@@ -21,9 +21,6 @@ class Engine:
         self.num_tasks = args.num_tasks
 
     def train_one_epoch(self, model, criterion, data_loader, optimizer, device, epoch, args):
-        """
-        한 epoch 동안 training을 수행합니다.
-        """
         model.train()
         metric_logger = utils.MetricLogger(delimiter="  ")
         header = f'Train: Epoch [{epoch+1}/{args.epochs}]'
