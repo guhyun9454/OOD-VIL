@@ -6,7 +6,7 @@ from torchvision import datasets, transforms
 
 from timm.data import create_transform
 
-from continual_datasets.continual_datasets import *
+from continual_datasets.base_datasets import *
 
 import utils
 

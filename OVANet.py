@@ -12,7 +12,7 @@ from torch.utils.data import DataLoader, ConcatDataset
 from utils import seed_everything
 from sklearn.metrics import confusion_matrix
 
-import continual_datasets.continual_datasets as cd
+import continual_datasets.base_datasets as cd
 from continual_datasets.dataset_utils import UnknownWrapper, RandomSampleWrapper
 
 class OVANet(nn.Module):

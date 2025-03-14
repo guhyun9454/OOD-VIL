@@ -1,34 +1,18 @@
 import os
-import os.path
-
-import pathlib
-from pathlib import Path
-
-from typing import Any, Tuple
-
-import glob
-from shutil import move, rmtree
-
-import numpy as np
-
-import torch
-import torch.utils
-import torch.utils.data
-from torchvision import datasets
-from torchvision.datasets.utils import download_url, check_integrity, verify_str_arg, download_and_extract_archive, extract_archive
-
-import PIL
-from PIL import Image
-
-import tqdm
-import zipfile
-import tarfile
-
-from .dataset_utils import read_image_file, read_label_file
-
-import string
 import shutil
+import string
+import zipfile
+import glob
+from pathlib import Path
+from shutil import move, rmtree
 from typing import Any, Tuple, Union
+import numpy as np
+import torch
+from torchvision import datasets
+from torchvision.datasets.utils import download_url, check_integrity, verify_str_arg, download_and_extract_archive, extract_archive,
+from PIL import Image
+import tqdm
+from .dataset_utils import read_image_file, read_label_file
 
 class MNIST_RGB(datasets.MNIST):
 
