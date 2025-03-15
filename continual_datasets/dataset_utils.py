@@ -19,6 +19,20 @@ import codecs
 
 from torch.utils.model_zoo import tqdm
 
+def set_data_config(args):
+    if args.dataset == "iDigits":
+        args.class_num = 10
+        args.domain_num = 4
+    elif args.dataset == "DomainNet":
+        args.class_num = 345
+        args.domain_num = 6
+    elif args.dataset == "CORe50":
+        args.class_num = 50
+        args.domain_num = 8
+    else:
+        raise ValueError(f"Unknown dataset: {args.dataset}")
+    return args
+
 class UnknownWrapper(torch.utils.data.Dataset):
     """
     원본 데이터셋의 라벨을 모두 unknown_label(= num_known)로 변경합니다.

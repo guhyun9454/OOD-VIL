@@ -14,6 +14,7 @@ from timm.scheduler import create_scheduler
 from timm.optim import create_optimizer
 
 from continual_datasets.build_incremental_scenario import build_continual_dataloader
+from continual_datasets.dataset_utils import set_data_config
 import models #여기서 models.py의 @register_model이 실행되고, timm의 모델 레지스트리에 등록, create_model를 통해 custom vit가 호출됨
 import utils
 import os
@@ -23,17 +24,6 @@ import warnings
 warnings.filterwarnings('ignore', 'Argument interpolation should be of type InterpolationMode instead of int')
 warnings.filterwarnings("ignore","The given NumPy array is not writable, and PyTorch does not support non-writable tensors")
 
-def set_data_config(args):
-    if args.dataset == "iDigits":
-        args.class_num = 10
-        args.domain_num = 4
-    elif args.dataset == "DomainNet":
-        args.class_num = 345
-        args.domain_num = 6
-    elif args.dataset == "CORe50":
-        args.class_num = 50
-        args.domain_num = 8
-    return args
 
 def main(args):
     # utils.init_distributed_mode(args)
@@ -71,9 +61,8 @@ def main(args):
     
     if args.method == 'ICON':
         from engines.ICONengine import Engine
-        assert args.model == "vit_base_patch16_224_ICON"
         model = create_model(
-            args.model, #vit_base_patch16_224_ICON
+            "vit_base_patch16_224_ICON",
             pretrained=args.pretrained, #True
             num_classes=args.nb_classes, #10
             drop_rate=args.drop, #0.0
@@ -89,20 +78,19 @@ def main(args):
                 p.requires_grad = True
     elif args.method == 'FT':
         from engines.FTengine import Engine
-        assert args.model == "vit_base_patch16_224"
         model = create_model(
-            args.model,               # "vit_base_patch16_224" (기본 FT 모델)
+            "vit_base_patch16_224",
             pretrained=args.pretrained,
             num_classes=args.nb_classes,
             drop_rate=args.drop,
             drop_path_rate=args.drop_path,
             drop_block_rate=None,
         )
-        for n, p in model.named_parameters():
-            if 'head' in n:
-                p.requires_grad = True
-            else:
-                p.requires_grad = False
+        # for n, p in model.named_parameters():
+        #     if 'head' in n:
+        #         p.requires_grad = True
+        #     else:
+        #         p.requires_grad = True
 
     else:
         raise ValueError(f"Unknown engine type: {args.engine}")
@@ -162,7 +150,7 @@ if __name__ == '__main__':
 
     # Model parameters
     parser.add_argument('--method', default='ICON', type=str, help='Engine type to use (e.g., ICON, FT)')
-    parser.add_argument('--model', default='vit_base_patch16_224', type=str, metavar='MODEL', help='Name of model to train')
+    parser.add_argument('--model', default=None, type=str, metavar='MODEL', help='Name of model to train')
     parser.add_argument('--input-size', default=224, type=int, help='images input size')
     parser.add_argument('--pretrained', default=True, help='Load pretrained model or not')
     parser.add_argument('--drop', type=float, default=0.0, metavar='PCT', help='Dropout rate (default: 0.)')
