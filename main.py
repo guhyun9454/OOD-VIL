@@ -17,6 +17,7 @@ from continual_datasets.build_incremental_scenario import build_continual_datalo
 import models #여기서 models.py의 @register_model이 실행되고, timm의 모델 레지스트리에 등록, create_model를 통해 custom vit가 호출됨
 import utils
 import os
+from utils import seed_everything
 
 import warnings
 warnings.filterwarnings('ignore', 'Argument interpolation should be of type InterpolationMode instead of int')
@@ -40,15 +41,7 @@ def main(args):
     args = set_data_config(args)
     device = torch.device(args.device)
 
-    # fix the seed for reproducibility
-    seed = args.seed
-    torch.manual_seed(seed)
-    np.random.seed(seed)
-    random.seed(seed)
-
-    cudnn.benchmark = True
-    cudnn.deterministic = True
-    
+    seed_everything(args.seed)
     
     data_loader, class_mask, domain_list = build_continual_dataloader(args)
     #class_mask =  ([8, 9], [0, 1], [8, 9], [8, 9], [8, 9], [6, 7], [0, 1], [6, 7], [2, 3], [4, 5], [4, 5], [0, 1], [2, 3], [2, 3], [4, 5], [2, 3], [4, 5], [6, 7], [0, 1], [6, 7])
