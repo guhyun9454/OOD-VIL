@@ -8,7 +8,7 @@
 # ------------------------------------------
 import torch.nn as nn
 from timm.models._registry import register_model
-from engines.ICON.vit_with_adapter import _create_vision_transformer
+from engines.custom_vit.vit_with_adapter import _create_vision_transformer
 from timm.data import IMAGENET_INCEPTION_MEAN, IMAGENET_INCEPTION_STD
 
 __all__ = [

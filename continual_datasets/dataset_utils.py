@@ -16,8 +16,9 @@ import zipfile
 import numpy as np
 import torch
 import codecs
-
+import torch 
 from torch.utils.model_zoo import tqdm
+from torchvision import transforms
 
 def set_data_config(args):
     if args.dataset == "iDigits":
@@ -32,6 +33,21 @@ def set_data_config(args):
     else:
         raise ValueError(f"Unknown dataset: {args.dataset}")
     return args
+
+def build_transform(is_train, args):
+    if is_train:
+        transform = transforms.Compose([
+            transforms.RandomResizedCrop(224),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+        ])
+    else:
+        transform = transforms.Compose([
+            transforms.Resize(256),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+        ])
+    return transform
 
 class UnknownWrapper(torch.utils.data.Dataset):
     """

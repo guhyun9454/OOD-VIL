@@ -2,24 +2,11 @@ import random
 
 import torch
 from torch.utils.data.dataset import Subset
-from torchvision import datasets, transforms
 
 from timm.data import create_transform
 
 from continual_datasets.base_datasets import *
-
-# import utils
-
-# class Lambda(transforms.Lambda):
-#     def __init__(self, lambd, nb_classes):
-#         super().__init__(lambd)
-#         self.nb_classes = nb_classes
-    
-#     def __call__(self, img):
-#         return self.lambd(img, self.nb_classes)
-
-# def target_transform(x, nb_classes):
-#     return x + nb_classes
+from continual_datasets.dataset_utils import build_transform
 
 def build_continual_dataloader(args):
     dataloader = list()
@@ -329,17 +316,3 @@ def build_vil_scenario(splited_dataset, args):
 
     return splited_dataset, class_mask, domain_list, args
 
-def build_transform(is_train, args):
-    if is_train:
-        transform = transforms.Compose([
-            transforms.RandomResizedCrop(224),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-        ])
-    else:
-        transform = transforms.Compose([
-            transforms.Resize(256),
-            transforms.CenterCrop(224),
-            transforms.ToTensor(),
-        ])
-    return transform

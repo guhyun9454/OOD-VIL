@@ -5,11 +5,11 @@ import random
 import numpy as np
 import time
 import torch
-import torch.backends.cudnn as cudnn
+import importlib
+
 
 from pathlib import Path
 
-from timm.models import create_model
 from timm.scheduler import create_scheduler
 from timm.optim import create_optimizer
 
@@ -57,49 +57,51 @@ def main(args):
         return 
 
     
+    try:
+        engine_module = importlib.import_module(f"engines.{args.method}")
+    except ImportError:
+        raise ValueError(f"Unknown engine type: {args.method}")
+    Engine = engine_module.Engine
+    model = engine_module.load_model(args)
+    model.to(args.device)
+    engine = Engine(model=model, device=args.device, class_mask=class_mask, domain_list=domain_list, args=args)
 
-    
-    if args.method == 'ICON':
-        from engines.ICONengine import Engine
-        model = create_model(
-            "vit_base_patch16_224_ICON",
-            pretrained=args.pretrained, #True
-            num_classes=args.nb_classes, #10
-            drop_rate=args.drop, #0.0
-            drop_path_rate=args.drop_path, #0.0
-            drop_block_rate=None,
-            adapt_blocks=args.adapt_blocks, #[0, 1, 2, 3, 4]
-        )
-        for n, p in model.named_parameters():
-            p.requires_grad = False
-            if 'adapter' in n:
-                p.requires_grad = True
-            if 'head' in n:
-                p.requires_grad = True
-    elif args.method == 'FT':
-        from engines.FTengine import Engine
-        model = create_model(
-            "vit_base_patch16_224",
-            pretrained=args.pretrained,
-            num_classes=args.nb_classes,
-            drop_rate=args.drop,
-            drop_path_rate=args.drop_path,
-            drop_block_rate=None,
-        )
-        # for n, p in model.named_parameters():
-        #     if 'head' in n:
-        #         p.requires_grad = True
-        #     else:
-        #         p.requires_grad = True
+    # if args.method == 'ICON':
+    #     from engines.ICON import Engine
+    #     model = create_model(
+    #         "vit_base_patch16_224_ICON",
+    #         pretrained=args.pretrained, #True
+    #         num_classes=args.nb_classes, #10
+    #         drop_rate=args.drop, #0.0
+    #         drop_path_rate=args.drop_path, #0.0
+    #         drop_block_rate=None,
+    #         adapt_blocks=args.adapt_blocks, #[0, 1, 2, 3, 4]
+    #     )
+    #     for n, p in model.named_parameters():
+    #         p.requires_grad = False
+    #         if 'adapter' in n:
+    #             p.requires_grad = True
+    #         if 'head' in n:
+    #             p.requires_grad = True
+    # elif args.method == 'FT':
+    #     from engines.FT import Engine
+    #     model = create_model(
+    #         "vit_base_patch16_224",
+    #         pretrained=args.pretrained,
+    #         num_classes=args.nb_classes,
+    #         drop_rate=args.drop,
+    #         drop_path_rate=args.drop_path,
+    #         drop_block_rate=None,
+    #     )
+    #     # for n, p in model.named_parameters():
+    #     #     if 'head' in n:
+    #     #         p.requires_grad = True
+    #     #     else:
+    #     #         p.requires_grad = True
 
-    else:
-        raise ValueError(f"Unknown engine type: {args.engine}")
-    
-    model.to(device)
-    engine = Engine(model=model,device=device, class_mask=class_mask, domain_list=domain_list, args=args)
-    
-
-
+    # else:
+    #     raise ValueError(f"Unknown engine type: {args.engine}")
+     
     print(args)
     
     if args.eval:

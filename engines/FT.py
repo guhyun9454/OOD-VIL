@@ -2,6 +2,19 @@ import numpy as np
 import torch
 from timm.utils import accuracy 
 import utils  
+from timm.models import create_model
+
+def load_model(args):
+    model = create_model(
+        "vit_base_patch16_224",
+        pretrained=args.pretrained,
+        num_classes=args.nb_classes,
+        drop_rate=args.drop,
+        drop_path_rate=args.drop_path,
+        drop_block_rate=None,
+    )
+
+    return model
 
 class Engine:
     def __init__(self, model=None, device=None, class_mask=[], domain_list=[], args=None):
@@ -19,6 +32,8 @@ class Engine:
         self.class_mask = class_mask
         self.domain_list = domain_list
         self.num_tasks = args.num_tasks
+
+
 
     def train_one_epoch(self, model, criterion, data_loader, optimizer, device, epoch, args):
         model.train()
@@ -56,6 +71,9 @@ class Engine:
         header = f'Test: Task {task_id+1}'
         with torch.no_grad():
             for batch_idx, (input, target) in enumerate(metric_logger.log_every(data_loader, args.print_freq, header)):
+                if args.develop:
+                    if batch_idx>20:
+                        break
                 input = input.to(device, non_blocking=True)
                 target = target.to(device, non_blocking=True)
                 
@@ -116,5 +134,6 @@ class Engine:
                 if lr_scheduler is not None:
                     lr_scheduler.step(epoch)
             # task 학습 후, 지금까지의 모든 task에 대해 평가합니다.
+            print(f"\n--- Testing on Task {task_id+1}/{args.num_tasks} ---")
             stats = self.evaluate_till_now(model, data_loader, device, task_id, class_mask, acc_matrix, args)
             print(f"Task {task_id+1} evaluation completed.")

@@ -18,9 +18,25 @@ import copy
 import utils
 import torch.nn.functional as F
 from sklearn.cluster import KMeans
-from sklearn.manifold import TSNE
-import matplotlib.pyplot as plt
+from timm.models import create_model
 
+def load_model(args):
+    model = create_model(
+        "vit_base_patch16_224_ICON",
+        pretrained=args.pretrained, #True
+        num_classes=args.nb_classes, #10
+        drop_rate=args.drop, #0.0
+        drop_path_rate=args.drop_path, #0.0
+        drop_block_rate=None,
+        adapt_blocks=args.adapt_blocks, #[0, 1, 2, 3, 4]
+    )
+    for n, p in model.named_parameters():
+        p.requires_grad = False
+        if 'adapter' in n:
+            p.requires_grad = True
+        if 'head' in n:
+            p.requires_grad = True
+    return model
 
 class Engine():
     def __init__(self, model=None,device=None,class_mask=[], domain_list= [], args=None):

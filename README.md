@@ -1,12 +1,3 @@
-# [ECCV 2024] Versatile Incremental Learning: Towards Class and Domain-Agnostic Incremental Learning
-
-Official PyTorch implementation for ECCV 2024 paper:
-
-**Versatile Incremental Learning: Towards Class and Domain-Agnostic Incremental Learning**  
-[Min-Yeong Park](https://github.com/pmy0792)\*, [Jaeho Lee](https://github.com/JH-LEE-KR)\*, and Gyeong-Moon Park† 
-
-[![arXiv](https://img.shields.io/badge/arXiv-2409.10956-b31b1b.svg)](https://arxiv.org/abs/2409.10956) 
-
 
 # Environment
 - Python 3.8.x
@@ -21,12 +12,27 @@ Official PyTorch implementation for ECCV 2024 paper:
 ```bash
 git clone git@github.com/KHU-AGI/VIL.git
 cd VIL
-conda create -n VIL python==3.8
-conda activate VIL
-pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu113
+conda create -n OODVIL python==3.8
+conda activate OODVIL
+pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu113
 pip install -r requirements.txt
 ```
 
 ## Run ICON on VIL with iDigits dataset
 ```bash
-python main.py --dataset iDigits --num_tasks 5 --seed 42 --batch-size 24 --IL_mode vil --model vit_base_patch16_224_ICON --method ICON --IC --thre 0.0 --beta 0.01 --use_cast_loss --k 2 --d_threshold  --develop --verbose```
+python main.py --dataset iDigits --num_tasks 20 --seed 42 --batch-size 24 --IL_mode vil --model vit_base_patch16_224_ICON --method ICON --IC --thre 0.0 --beta 0.01 --use_cast_loss --k 2 --d_threshold  --develop --verbose
+```
+
+## Run FT on VIL with iDigits dataset
+```bash
+python main.py --dataset iDigits --num_tasks 20 --IL_mode vil --seed 42 --batch-size 24 --method FT
+```
+
+## Run FT on CIL with iDigits dataset
+```bash
+python main.py --dataset iDigits --num_tasks 5 --IL_mode cil --seed 42 --batch-size 24 --method FT
+```
+## Run FT on DIL with iDigits dataset
+```bash
+python main.py --dataset iDigits --num_tasks 4 --IL_mode dil --seed 42 --batch-size 24 --method FT
+```
