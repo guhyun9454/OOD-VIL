@@ -242,9 +242,9 @@ if __name__ == '__main__':
     parser.add_argument('--alpha',default=1.0, type=float, help='coefficient of knowledge distillation in IC loss')
 
     #! CAST
-    parser.add_argument('--beta',default=0.001, type=float, help='coefficient of cast loss')
+    parser.add_argument('--beta',default=0.01, type=float, help='coefficient of cast loss')
     parser.add_argument('--k', default=2, type=int, help='the number of clusters in shift pool')
-    parser.add_argument('--use_cast_loss', action='store_true', default=False, help='if using CAST loss')
+    parser.add_argument('--CAST', action='store_true', default=False, help='if using CAST loss')
     parser.add_argument('--norm_cast', action='store_true', default=False, help='if using normalization in cast')
     
    
