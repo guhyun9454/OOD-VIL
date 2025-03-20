@@ -1,5 +1,7 @@
 import os
 import torch
+import time
+import datetime
 import numpy as np
 import torch.nn.functional as F
 from timm.utils import accuracy
@@ -16,7 +18,6 @@ def load_model(args):
         drop_path_rate=args.drop_path,
         drop_block_rate=None,
     )
-
     return model
 
 class Engine:
@@ -35,8 +36,6 @@ class Engine:
         self.class_mask = class_mask
         self.domain_list = domain_list
         self.num_tasks = args.num_tasks
-
-
 
     def train_one_epoch(self, model, criterion, data_loader, optimizer, device, epoch, args):
         model.train()
@@ -74,8 +73,7 @@ class Engine:
 
         epoch_avg_loss = total_loss / total_samples if total_samples > 0 else 0.0
         epoch_avg_acc = total_acc / total_samples if total_samples > 0 else 0.0
-        print(f"Epoch [{epoch+1}/{args.epochs}] Completed: Avg Loss = {epoch_avg_loss:.4f}, Avg Acc@1 = {epoch_avg_acc:.2f}")
-
+        return epoch_avg_loss, epoch_avg_acc
 
     def evaluate_task(self, model, data_loader, device, task_id, class_mask, args):
         """
@@ -114,7 +112,6 @@ class Engine:
         print(f"Task {task_id+1}: Final Avg Loss = {avg_loss:.4f} | Final Avg Acc@1 = {avg_acc:.2f}")
         return avg_acc
 
-    
     def evaluate_ood(self, model, id_loader, ood_loader, device, args):
         """
         OOD 평가: 모델 출력 logits에서 softmax의 최대값을 id_score로,
@@ -205,8 +202,6 @@ class Engine:
             save_accuracy_heatmap(result, task_id, args)
             print(result)
 
-
-
     def train_and_evaluate(self, model, criterion, data_loader, optimizer, lr_scheduler, device, class_mask, args):
         """
         전체 incremental learning 과정을 수행합니다.
@@ -215,15 +210,23 @@ class Engine:
         """
         acc_matrix = np.zeros((args.num_tasks, args.num_tasks))
         for task_id in range(args.num_tasks):
-            print(f"\n--- Training on Task {task_id+1}/{args.num_tasks} ---")
+            print(f"{f'Training on Task {task_id+1}/{args.num_tasks}':=^60}")
+            start = time.time()
             for epoch in range(args.epochs):
-                self.train_one_epoch(model, criterion, data_loader[task_id]['train'], optimizer, device, epoch, args)
+                epoch_start = time.time()
+                epoch_avg_loss, epoch_avg_acc = self.train_one_epoch(model, criterion, data_loader[task_id]['train'], optimizer, device, epoch, args)
+                epoch_duration = time.time() - epoch_start  
+                print(f"Epoch [{epoch+1}/{args.epochs}] Completed in {str(datetime.timedelta(seconds=int(epoch_duration)))}: Avg Loss = {epoch_avg_loss:.4f}, Avg Acc@1 = {epoch_avg_acc:.2f}")
+
                 if lr_scheduler is not None:
                     lr_scheduler.step(epoch)
-
-            print(f"\n--- Testing on Task {task_id+1}/{args.num_tasks} ---")
+            train_duration = time.time() - start
+            print(f"Task {task_id+1} training completed in {str(datetime.timedelta(seconds=int(train_duration)))}")
+            print(f'{f"Testing on Task {task_id+1}/{args.num_tasks}":=^60}')
+            start = time.time()
             self.evaluate_till_now(model, data_loader, device, task_id, class_mask, acc_matrix, args)
-            print(f"Task {task_id+1} evaluation completed.")
+            eval_duration = time.time() - start
+            print(f"Task {task_id+1} evaluation completed in {str(datetime.timedelta(seconds=int(eval_duration)))}")
 
             if args.output_dir:
                 checkpoint_dir = os.path.join(args.output_dir, 'checkpoint')
@@ -240,10 +243,12 @@ class Engine:
                 print(f"Saved checkpoint for task {task_id+1} at {checkpoint_path}")
         
         if args.ood_dataset:
-            print("\n--- OOD Evaluation ---")
+            print(f"{'OOD Evaluation':=^60}")
+            start = time.time()
             all_id_datasets = torch.utils.data.ConcatDataset([dl['val'].dataset for dl in data_loader])
             id_loader = torch.utils.data.DataLoader(all_id_datasets, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=args.pin_mem)
             
             ood_loader = data_loader[-1]['ood']
             self.evaluate_ood(model, id_loader, ood_loader, device, args)
-            print("OOD evaluation completed.")
+            ood_duration = time.time() - start
+            print(f"OOD evaluation completed in {str(datetime.timedelta(seconds=int(ood_duration)))}")
