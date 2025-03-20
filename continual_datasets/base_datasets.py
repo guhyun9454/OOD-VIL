@@ -742,7 +742,7 @@ class DomainNet(torch.utils.data.Dataset):
 
 
 def gen_bar_updater():
-    pbar = tqdm(total=None)
+    pbar = tqdm.tqdm(total=None)
 
     def bar_update(count, block_size, total_size):
         if pbar.total is None and total_size:
