@@ -5,6 +5,7 @@ import torch.nn.functional as F
 from timm.utils import accuracy
 from timm.models import create_model
 from sklearn.metrics import roc_auc_score
+from utils import save_accuracy_heatmap
 
 def load_model(args):
     model = create_model(
@@ -201,6 +202,7 @@ class Engine:
         if args.verbose:
             sub_matrix = acc_matrix[:task_id+1, :task_id+1]
             result = np.where(np.triu(np.ones_like(sub_matrix, dtype=bool)), sub_matrix, np.nan)
+            save_accuracy_heatmap(result, task_id, args)
             print(result)
 
 

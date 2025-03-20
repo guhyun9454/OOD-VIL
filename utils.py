@@ -19,6 +19,41 @@
 import numpy as np
 import random
 import torch
+import matplotlib.pyplot as plt
+import numpy as np
+import os
+
+def save_accuracy_heatmap(mat, task_id, args):
+    """
+    주어진 numpy 배열(result)을 heatmap으로 그려 파일로 저장합니다.
+    """
+
+    filename = os.path.join(args.output_dir, f"accuracy_matrix_task{task_id+1}.png")
+    title = f"Accuracy Matrix up to Task {task_id+1}"
+
+    plt.figure(figsize=(6, 5))
+    im = plt.imshow(mat, interpolation='nearest', cmap="Reds", vmin=0, vmax=100)
+    plt.title(title)
+    plt.xlabel("Task")
+    plt.ylabel("Task")
+    plt.colorbar(im, label="Accuracy")
+
+
+    # 각 셀에 정확도 값을 텍스트로 표시
+    for i in range(mat.shape[0]):
+        for j in range(mat.shape[1]):
+            if mat[i, j]:
+                plt.text(j, i, f"{mat[i, j]:.2f}", ha="center", va="center", color="white", fontsize=10)
+    plt.xticks(np.arange(mat.shape[1]))
+    plt.yticks(np.arange(mat.shape[0]))
+    ax = plt.gca()
+    ax.xaxis.tick_top()
+    ax.xaxis.set_label_position('top')
+    plt.tight_layout()
+    plt.savefig(filename)
+    plt.close()
+    print(f"Saved accuracy heatmap to {filename}")
+
 # import torch.distributed as dist
 
 # class SmoothedValue(object):
