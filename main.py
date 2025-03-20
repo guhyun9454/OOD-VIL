@@ -145,8 +145,8 @@ def main(args):
     print(f"Total training time: {total_time_str}")
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser('LAE')
-
+    parser = argparse.ArgumentParser('OOD-VIL')
+    
     parser.add_argument('--batch-size', default=24, type=int, help='Batch size per device')
     parser.add_argument('--epochs', default=5, type=int)
 

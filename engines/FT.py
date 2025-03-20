@@ -105,8 +105,10 @@ class Engine:
 
         avg_stat = np.sum(stat_matrix, axis=1) / (task_id + 1)
         A_last = avg_stat[0]
-        A_avg = np.mean(acc_matrix[np.triu_indices(task_id+1)])
-        
+        A_i = [np.mean(acc_matrix[:i+1, i]) for i in range(task_id+1)]
+        assert A_i[-1] == A_last
+        A_avg = np.mean(A_i)
+
         result_str = "[Average accuracy till task{}] A_last: {:.4f} A_avg: {:.4f}".format(task_id+1, A_last, A_avg)
         
         if task_id > 0:
