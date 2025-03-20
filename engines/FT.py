@@ -1,6 +1,6 @@
 import os
 import torch
-import utils
+# import utils
 import numpy as np
 import torch.nn.functional as F
 from timm.utils import accuracy
@@ -40,9 +40,10 @@ class Engine:
 
     def train_one_epoch(self, model, criterion, data_loader, optimizer, device, epoch, args):
         model.train()
-        metric_logger = utils.MetricLogger(delimiter="  ")
-        header = f'Train: Epoch [{epoch+1}/{args.epochs}]'
-        for batch_idx, (input, target) in enumerate(metric_logger.log_every(data_loader, args.print_freq, header)):
+        # metric_logger = utils.MetricLogger(delimiter="  ")
+        # header = f'Train: Epoch [{epoch+1}/{args.epochs}]'
+        # for batch_idx, (input, target) in enumerate(metric_logger.log_every(data_loader, args.print_freq, header)):
+        for batch_idx, (input, target) in enumerate(data_loader):
             if self.args.develop:
                 if batch_idx>20:
                     break
@@ -57,12 +58,13 @@ class Engine:
             optimizer.step()
             
             acc1, acc5 = accuracy(output, target, topk=(1, 5))
-            metric_logger.update(Loss=loss.item())
-            metric_logger.update(Lr=optimizer.param_groups[0]["lr"])
-            metric_logger.meters['Acc@1'].update(acc1.item(), n=input.size(0))
-            metric_logger.meters['Acc@5'].update(acc5.item(), n=input.size(0))
-        print("Averaged stats:", metric_logger)
-        return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+            # metric_logger.update(Loss=loss.item())
+            # metric_logger.update(Lr=optimizer.param_groups[0]["lr"])
+            # metric_logger.meters['Acc@1'].update(acc1.item(), n=input.size(0))
+            # metric_logger.meters['Acc@5'].update(acc5.item(), n=input.size(0))
+        # print("Averaged stats:", metric_logger)
+        # return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+        # return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
     def evaluate_task(self, model, data_loader, device, task_id, class_mask, args):
         """
@@ -70,10 +72,14 @@ class Engine:
         """
         criterion = torch.nn.CrossEntropyLoss().to(device)
         model.eval()
-        metric_logger = utils.MetricLogger(delimiter="  ")
-        header = f'Test: Task {task_id+1}'
+        total_acc = 0.0
+        total_loss = 0.0
+        total_samples = 0
+        # metric_logger = utils.MetricLogger(delimiter="  ")
+        # header = f'Test: Task {task_id+1}'
         with torch.no_grad():
-            for batch_idx, (input, target) in enumerate(metric_logger.log_every(data_loader, args.print_freq, header)):
+            # for batch_idx, (input, target) in enumerate(metric_logger.log_every(data_loader, args.print_freq, header)):
+            for batch_idx, (input, target) in enumerate(data_loader):
                 if args.develop:
                     if batch_idx>20:
                         break
@@ -83,15 +89,26 @@ class Engine:
                 output = model(input)
                 loss = criterion(output, target)
                 acc1, acc5 = accuracy(output, target, topk=(1, 5))
-                metric_logger.update(Loss=loss.item())
-                metric_logger.meters['Acc@1'].update(acc1.item(), n=input.size(0))
-                metric_logger.meters['Acc@5'].update(acc5.item(), n=input.size(0))
-        print('* Acc@1 {top1.global_avg:.3f} Acc@5 {top5.global_avg:.3f} Loss {losses.global_avg:.3f}'.format(
-            top1=metric_logger.meters['Acc@1'],
-            top5=metric_logger.meters['Acc@5'],
-            losses=metric_logger.meters['Loss']
-        ))
-        return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+                batch_size = input.size(0)
+
+                total_acc += acc1.item() * batch_size
+                total_loss += loss.item() * batch_size
+                total_samples += batch_size
+
+
+                # metric_logger.update(Loss=loss.item())
+                # metric_logger.meters['Acc@1'].update(acc1.item(), n=input.size(0))
+                # metric_logger.meters['Acc@5'].update(acc5.item(), n=input.size(0))
+        # print('* Acc@1 {top1.global_avg:.3f} Acc@5 {top5.global_avg:.3f} Loss {losses.global_avg:.3f}'.format(
+            # top1=metric_logger.meters['Acc@1'],
+            # top5=metric_logger.meters['Acc@5'],
+            # losses=metric_logger.meters['Loss']
+        # ))
+        # return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+        avg_acc = total_acc / total_samples  # 평균 정확도 (퍼센트 단위)
+        avg_loss = total_loss / total_samples
+        print(f"Task {task_id+1}: Avg Loss: {avg_loss:.4f} | Avg Acc@1: {avg_acc:.2f}")
+        return avg_acc
     
     def evaluate_ood(self, model, id_loader, ood_loader, device, args):
         """
@@ -164,9 +181,10 @@ class Engine:
         A_last, A_avg, Forgetting 지표를 계산하여 출력합니다.
         """
         for t in range(task_id+1):
-            test_stats = self.evaluate_task(model, data_loader[t]['val'], device, t, class_mask, args)
+            # test_stats = self.evaluate_task(model, data_loader[t]['val'], device, t, class_mask, args)
+            # acc_matrix[t, task_id] = test_stats['Acc@1']
 
-            acc_matrix[t, task_id] = test_stats['Acc@1']
+            acc_matrix[t, task_id] = self.evaluate_task(model, data_loader[t]['val'], device, t, class_mask, args)
 
         A_i = [np.mean(acc_matrix[:i+1, i]) for i in range(task_id+1)]
         A_last = A_i[-1]
@@ -196,7 +214,8 @@ class Engine:
         for task_id in range(args.num_tasks):
             print(f"\n--- Training on Task {task_id+1}/{args.num_tasks} ---")
             for epoch in range(args.epochs):
-                train_stats = self.train_one_epoch(model, criterion, data_loader[task_id]['train'], optimizer, device, epoch, args)
+                # train_stats = self.train_one_epoch(model, criterion, data_loader[task_id]['train'], optimizer, device, epoch, args)
+                self.train_one_epoch(model, criterion, data_loader[task_id]['train'], optimizer, device, epoch, args)
                 if lr_scheduler is not None:
                     lr_scheduler.step(epoch)
 
@@ -204,7 +223,8 @@ class Engine:
             self.evaluate_till_now(model, data_loader, device, task_id, class_mask, acc_matrix, args)
             print(f"Task {task_id+1} evaluation completed.")
 
-            if args.output_dir and utils.is_main_process():
+            # if args.output_dir and utils.is_main_process():
+            if args.output_dir:
                 checkpoint_dir = os.path.join(args.output_dir, 'checkpoint')
                 os.makedirs(checkpoint_dir, exist_ok=True)
                 checkpoint_path = os.path.join(checkpoint_dir, 'task{}_checkpoint.pth'.format(task_id+1))
