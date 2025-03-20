@@ -1,18 +1,13 @@
-import random
-
 import torch
+import random
 from torch.utils.data.dataset import Subset
-
-from timm.data import create_transform
-
 from continual_datasets.base_datasets import *
-from continual_datasets.dataset_utils import build_transform
+from continual_datasets.dataset_utils import build_transform, UnknownWrapper, get_dataset
 
 def build_continual_dataloader(args):
     dataloader = list()
-    class_mask = None
-    domain_list = None
-    
+    class_mask = domain_list = None
+
     transform_train = build_transform(True, args)
     transform_val = build_transform(False, args)
 
@@ -20,7 +15,7 @@ def build_continual_dataloader(args):
 
     if mode == 'cil':
         if 'iDigits' in args.dataset:
-            dataset_list = ['MNIST', 'SVHN', 'MNISTM', 'SynDigit']
+            dataset_list = args.id_datasets
             train, val = list(), list()
             mask = list()
             for i, dataset in enumerate(dataset_list):
@@ -70,7 +65,7 @@ def build_continual_dataloader(args):
 
     elif mode in ['dil', 'vil', 'ood_vil']:
         if 'iDigits' in args.dataset:
-            dataset_list = ['MNIST', 'SVHN', 'MNISTM', 'SynDigit']
+            dataset_list = args.id_datasets
             splited_dataset = list()
 
             for i in range(len(dataset_list)):
@@ -106,7 +101,7 @@ def build_continual_dataloader(args):
     
     elif mode in ['joint']:
         if 'iDigits' in args.dataset:
-            dataset_list = ['MNIST', 'SVHN', 'MNISTM', 'SynDigit']
+            dataset_list = args.id_datasets
             train, val = list(), list()
             mask = list()
             for i, dataset in enumerate(dataset_list):
@@ -147,8 +142,7 @@ def build_continual_dataloader(args):
 
     if args.IL_mode in ['vil','ood_vil']:
         splited_dataset, class_mask, domain_list, args = build_vil_scenario(splited_dataset, args)
-        for c, d in zip(class_mask, domain_list):
-            print(c, d)
+
     for i in range(len(splited_dataset)):
         dataset_train, dataset_val = splited_dataset[i]
 
@@ -171,82 +165,24 @@ def build_continual_dataloader(args):
 
         dataloader.append({'train': data_loader_train, 'val': data_loader_val})
 
-    return dataloader, class_mask, domain_list
-
-def get_dataset(dataset, transform_train, transform_val, mode, args,):
-    if dataset == 'MNIST':
-        dataset_train = MNIST_RGB(args.data_path, train=True, download=True, transform=transform_train)
-        dataset_val = MNIST_RGB(args.data_path, train=False, download=True, transform=transform_val)
-    
-    elif dataset == 'SVHN':
-        dataset_train = SVHN(args.data_path, split='train', download=True, transform=transform_train)
-        dataset_val = SVHN(args.data_path, split='test', download=True, transform=transform_val)
-
-    elif dataset == 'CORe50':
-        dataset_train = CORe50(args.data_path, train=True, download=True, transform=transform_train, mode=mode).data
-        dataset_val = CORe50(args.data_path, train=False, download=True, transform=transform_val, mode=mode).data
-
-    elif dataset == 'DomainNet':
-        dataset_train = DomainNet(args.data_path, train=True, download=True, transform=transform_train, mode=mode).data
-        dataset_val = DomainNet(args.data_path, train=False, download=True, transform=transform_val, mode=mode).data
-
-    elif dataset == 'MNISTM':
-        dataset_train = MNISTM(args.data_path, train=True, download=True, transform=transform_train)
-        dataset_val = MNISTM(args.data_path, train=False, download=True, transform=transform_val)
-
-    elif dataset == 'SynDigit':
-        dataset_train = SynDigit(args.data_path, train=True, download=True, transform=transform_train)
-        dataset_val = SynDigit(args.data_path, train=False, download=True, transform=transform_val)
-
-    elif dataset == 'EMNIST':
-        dataset_train = EMNIST_RGB(args.data_path, train=True, download=True, transform=transform_train, random_seed=args.seed, num_random_classes=10, split='letters')
-        dataset_val = EMNIST_RGB(args.data_path, train=False, download=True, transform=transform_val, random_seed=args.seed, num_random_classes=10, split='letters')
-
-    else:
-        raise ValueError('Dataset {} not found.'.format(dataset))
-    
     if args.verbose:
-        divider = "=" * 60
-        print(divider)
-        print(f"Dataset: {dataset}")
-        # Train dataset 정보 출력
-        if isinstance(dataset_train, list):
-            total_train = sum(len(ds) for ds in dataset_train)
-            print(f"Train dataset total size: {total_train}")
-            for i, ds in enumerate(dataset_train):
-                try:
-                    classes = ds.classes
-                    print(f"  Sub-dataset {i}: size {len(ds)}, {len(classes)} classes, classes: {classes}")
-                except AttributeError:
-                    print(f"  Sub-dataset {i}: size {len(ds)}")
-        else:
-            print(f"Train dataset size: {len(dataset_train)}")
-            try:
-                print(f"Number of classes: {len(dataset_train.classes)}")
-                print(f"Classes: {dataset_train.classes}")
-            except AttributeError:
-                pass
+        print(f"{'TASK INFO':=^60}")
+        print(f"{'Dataset':<20} => {args.dataset}")
+        print(f"{'Number of tasks':<20} => {args.num_tasks}")
+        print(f"{'Number of classes':<20} => {args.class_num}")
+        print(f"{'Number of domains':<20} => {args.domain_num}")
+        print("domain_list:", domain_list)
+        print("class_mask:", class_mask)
+        print("dataloader: ",len(dataloader))
+        print(f"{'Sequence of Tasks':=^60}")    
+        num_tasks = args.num_tasks
+        for t_id in range(num_tasks):
+            dom_info = domain_list[t_id] if domain_list is not None else "N/A"
+            cls_info = class_mask[t_id] if class_mask is not None else "N/A"
+            print(f"Task {t_id+1} => domain(s): {dom_info}, classes: {cls_info}")
+        print(f"{'':=^60}")
 
-        # Validation dataset 정보 출력
-        if isinstance(dataset_val, list):
-            total_val = sum(len(ds) for ds in dataset_val)
-            print(f"Validation dataset total size: {total_val}")
-            for i, ds in enumerate(dataset_val):
-                try:
-                    classes = ds.classes
-                    print(f"  Sub-dataset {i}: size {len(ds)}, {len(classes)} classes, classes: {classes}")
-                except AttributeError:
-                    print(f"  Sub-dataset {i}: size {len(ds)}")
-        else:
-            print(f"Validation dataset size: {len(dataset_val)}")
-            try:
-                print(f"Number of classes: {len(dataset_val.classes)}")
-                print(f"Classes: {dataset_val.classes}")
-            except AttributeError:
-                pass
-        print(divider)
-    
-    return dataset_train, dataset_val
+    return dataloader, class_mask, domain_list
 
 def split_single_dataset(dataset_train, dataset_val, args):
     #CIL 세팅

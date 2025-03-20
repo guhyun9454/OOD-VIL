@@ -16,7 +16,7 @@ python main.py --dataset iDigits --num_tasks 20 --IL_mode vil --method ICON --se
 
 ## Run FT on VIL with iDigits dataset
 ```bash
-python main.py --dataset iDigits --num_tasks 20 --IL_mode vil --method FT --seed 42 --batch-size 24 
+python main.py --dataset iDigits --num_tasks 20 --IL_mode vil --method FT --seed 42 --batch-size 24 --lr 0.01
 ```
 
 ## Run FT on CIL with iDigits dataset
