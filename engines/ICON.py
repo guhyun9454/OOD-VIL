@@ -24,7 +24,7 @@ def load_model(args):
     model = create_model(
         "vit_base_patch16_224_ICON",
         pretrained=args.pretrained, #True
-        num_classes=args.nb_classes, #10
+        num_classes=args.nums_classes, #10
         drop_rate=args.drop, #0.0
         drop_path_rate=args.drop_path, #0.0
         drop_block_rate=None,
@@ -215,7 +215,7 @@ class Engine():
             # here is the trick to mask out classes of non-current tasks
             if class_mask is not None:
                 mask = class_mask[task_id]
-                not_mask = np.setdiff1d(np.arange(args.nb_classes), mask)
+                not_mask = np.setdiff1d(np.arange(args.nums_classes), mask)
                 not_mask = torch.tensor(not_mask, dtype=torch.int64).to(device)
                 logits = output.index_fill(dim=1, index=not_mask, value=float('-inf'))
 

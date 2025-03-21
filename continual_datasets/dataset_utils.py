@@ -146,11 +146,10 @@ class RandomSampleWrapper(torch.utils.data.Dataset):
     """
     주어진 데이터셋에서 num_samples만큼 랜덤으로 샘플링하여 반환합니다.
     """
-    def __init__(self, dataset, num_samples, seed=None):
+    def __init__(self, dataset, num_samples, seed):
         self.dataset = dataset
         self.num_samples = num_samples
-        if seed is not None:
-            np.random.seed(seed)
+        np.random.seed(seed)
         # replacement 없이 num_samples 개의 인덱스 선택
         self.indices = np.random.choice(len(dataset), size=num_samples, replace=False)
 

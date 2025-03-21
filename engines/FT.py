@@ -15,7 +15,7 @@ def load_model(args):
     model = create_model(
         "vit_base_patch16_224",
         pretrained=args.pretrained,
-        num_classes=args.nb_classes,
+        num_classes=args.nums_classes,
         drop_rate=args.drop,
         drop_path_rate=args.drop_path,
         drop_block_rate=None,
@@ -46,11 +46,10 @@ class Engine:
         total_samples = 0
 
         for batch_idx, (inputs, targets) in enumerate(data_loader):
-            if self.args.develop and batch_idx > 20:
-                break
+            if self.args.develop and batch_idx > 20: break
 
-            inputs = inputs.to(device, non_blocking=True)
-            targets = targets.to(device, non_blocking=True)
+            inputs = inputs.to(device)
+            targets = targets.to(device)
             
             outputs = model(inputs)
             loss = criterion(outputs, targets)
@@ -89,10 +88,10 @@ class Engine:
 
         with torch.no_grad():
             for batch_idx, (inputs, targets) in enumerate(data_loader):
-                if args.develop and batch_idx > 20:
-                    break
-                inputs = inputs.to(device, non_blocking=True)
-                targets = targets.to(device, non_blocking=True)
+                if args.develop and batch_idx > 20: break
+
+                inputs = inputs.to(device)
+                targets = targets.to(device)
                 
                 outputs = model(inputs)
                 loss = criterion(outputs, targets)
@@ -119,7 +118,7 @@ class Engine:
         Revised OOD evaluation:
         - Align ID and OOD datasets to the same number of samples.
         - For each sample, compute softmax outputs and determine prediction: if max_softmax < 0.5, predict as unknown (args.unknown_class), otherwise use argmax.
-        - Combine predictions from ID and OOD data to build a (nb_classes+1) x (nb_classes+1) confusion matrix.
+        - Combine predictions from ID and OOD data to build a (nums_classes+1) x (nums_classes+1) confusion matrix.
         - Compute AUROC using binary labels (0 for ID, 1 for OOD) and ood scores (1 - max_softmax).
         """
 
@@ -132,11 +131,11 @@ class Engine:
 
         # Use RandomSampleWrapper if dataset size is larger than min_size
         if id_size > min_size:
-            id_dataset_aligned = RandomSampleWrapper(id_datasets, min_size)
+            id_dataset_aligned = RandomSampleWrapper(id_datasets, min_size, args.seed)
         else:
             id_dataset_aligned = id_datasets
         if ood_size > min_size:
-            ood_dataset_aligned = RandomSampleWrapper(ood_dataset, min_size)
+            ood_dataset_aligned = RandomSampleWrapper(ood_dataset, min_size, args.seed)
         else:
             ood_dataset_aligned = ood_dataset
 
@@ -157,7 +156,7 @@ class Engine:
                 softmax_outputs = F.softmax(outputs, dim=1)
                 max_softmax, pred_class = torch.max(softmax_outputs, dim=1)
                 # If max_softmax is below 0.5, predict as unknown
-                pred = torch.where(max_softmax < 0.5, torch.full_like(pred_class, args.unknown_class), pred_class)
+                pred = torch.where(max_softmax < 0.5, torch.full_like(pred_class, args.nums_classes), pred_class)
                 all_true.extend(targets.cpu().numpy())
                 all_pred.extend(pred.cpu().numpy())
                 binary_labels.extend([0] * inputs.size(0))
@@ -169,16 +168,16 @@ class Engine:
                 outputs = model(inputs)
                 softmax_outputs = F.softmax(outputs, dim=1)
                 max_softmax, pred_class = torch.max(softmax_outputs, dim=1)
-                pred = torch.where(max_softmax < 0.5, torch.full_like(pred_class, args.unknown_class), pred_class)
+                pred = torch.where(max_softmax < 0.5, torch.full_like(pred_class, args.nums_classes), pred_class)
                 # For OOD, true label should be set to unknown_class
-                true_labels = torch.full_like(targets, fill_value=args.unknown_class)
+                true_labels = torch.full_like(targets, fill_value=args.nums_classes)
                 all_true.extend(true_labels.cpu().numpy())
                 all_pred.extend(pred.cpu().numpy())
                 binary_labels.extend([1] * inputs.size(0))
                 ood_scores_all.extend((1 - max_softmax).cpu().numpy())
 
-        # Build confusion matrix: labels from 0 to (nb_classes - 1) and unknown_class
-        labels = list(range(args.nb_classes)) + [args.unknown_class]
+        # Build confusion matrix: labels from 0 to (nums_classes - 1) and unknown_class
+        labels = list(range(args.nums_classes+1)) 
         conf_matrix = confusion_matrix(all_true, all_pred, labels=labels)
 
         # Compute AUROC for OOD detection using binary labels and ood scores
@@ -222,6 +221,16 @@ class Engine:
             save_accuracy_heatmap(result, task_id, args)
             print(result)
 
+        if task_id == args.num_tasks - 1 and args.ood_dataset:
+            print(f"{'OOD Evaluation':=^60}")
+            ood_start = time.time()
+            all_id_datasets = torch.utils.data.ConcatDataset([dl['val'].dataset for dl in data_loader])
+            
+            ood_loader = data_loader[-1]['ood']
+            self.evaluate_ood(model, all_id_datasets, ood_loader, device, args)
+            ood_duration = time.time() - ood_start
+            print(f"OOD evaluation completed in {str(datetime.timedelta(seconds=int(ood_duration)))}")
+
     def train_and_evaluate(self, model, criterion, data_loader, optimizer, lr_scheduler, device, class_mask, args):
         """
         전체 incremental learning 과정을 수행합니다.
@@ -261,13 +270,3 @@ class Engine:
                 with open(checkpoint_path, 'wb') as f:
                     torch.save(checkpoint, f)
                 print(f"Saved checkpoint for task {task_id+1} at {checkpoint_path}")
-        
-        if args.ood_dataset:
-            print(f"{'OOD Evaluation':=^60}")
-            ood_start = time.time()
-            all_id_datasets = torch.utils.data.ConcatDataset([dl['val'].dataset for dl in data_loader])
-            
-            ood_loader = data_loader[-1]['ood']
-            self.evaluate_ood(model, all_id_datasets, ood_loader, device, args)
-            ood_duration = time.time() - ood_start
-            print(f"OOD evaluation completed in {str(datetime.timedelta(seconds=int(ood_duration)))}")
