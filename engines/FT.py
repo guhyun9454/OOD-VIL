@@ -106,11 +106,11 @@ class Engine:
                     running_avg_loss = total_loss / total_samples
                     running_avg_acc = total_acc / total_samples
                     print(f"Task {task_id+1}, Batch [{batch_idx}/{len(data_loader)}]: "
-                        f"Running Avg Loss = {running_avg_loss:.4f}, Running Avg Acc@1 = {running_avg_acc:.2f}")
+                        f"Running Avg Loss = {running_avg_loss:.2f}, Running Avg Acc@1 = {running_avg_acc:.2f}")
 
         avg_acc = total_acc / total_samples
         avg_loss = total_loss / total_samples
-        print(f"Task {task_id+1}: Final Avg Loss = {avg_loss:.4f} | Final Avg Acc@1 = {avg_acc:.2f}")
+        print(f"Task {task_id+1}: Final Avg Loss = {avg_loss:.2f} | Final Avg Acc@1 = {avg_acc:.2f}")
         return avg_acc
 
     def evaluate_ood(self, model, id_datasets, ood_dataset, device, args):
@@ -201,7 +201,7 @@ class Engine:
         except Exception as e:
             print("AUROC computation error:", e)
             auroc = 0.0
-        print(f"OOD Evaluation: AUROC: {auroc:.3f}, A_id: {acc_id:.3f}, A_ood: {acc_ood:.3f}  H_score: {h_score:.3f}")
+        print(f"OOD Evaluation: AUROC: {auroc * 100:.2f}, A_id: {acc_id * 100:.2f}, A_ood: {acc_ood * 100:.2f}  H_score: {h_score * 100:.2f}")
 
         if args.verbose:
             save_confusion_matrix_plot(conf_matrix, labels, args)
@@ -223,7 +223,7 @@ class Engine:
         A_last = A_i[-1]
         A_avg = np.mean(A_i)
 
-        result_str = "[Average accuracy till task{}] A_last: {:.4f} A_avg: {:.4f}".format(task_id+1, A_last, A_avg)
+        result_str = "[Average accuracy till task{}] A_last: {:.2f} A_avg: {:.2f}".format(task_id+1, A_last, A_avg)
         
         if task_id > 0:
             forgetting = np.mean((np.max(acc_matrix, axis=1) - acc_matrix[:, task_id])[:task_id])
@@ -234,7 +234,6 @@ class Engine:
             sub_matrix = acc_matrix[:task_id+1, :task_id+1]
             result = np.where(np.triu(np.ones_like(sub_matrix, dtype=bool)), sub_matrix, np.nan)
             save_accuracy_heatmap(result, task_id, args)
-            print(result)
 
         if task_id == args.num_tasks - 1 and args.ood_dataset:
             print(f"{'OOD Evaluation':=^60}")
