@@ -20,39 +20,54 @@ import numpy as np
 import random
 import torch
 import matplotlib.pyplot as plt
-import numpy as np
 import os
+import seaborn as sns
+
+def save_confusion_matrix_plot(confusion_matrix, labels, args):
+    modified_labels = labels.copy()
+    modified_labels[-1] = 'ood'
+    save_path = os.path.join(args.output_dir, 'confusion_matrix.png')
+    plt.figure(figsize=(16,12))
+    sns.heatmap(confusion_matrix,
+                annot=True,
+                fmt='d',
+                cmap='Blues',
+                xticklabels=modified_labels,
+                yticklabels=modified_labels)
+    plt.xlabel('Predicted Label')
+    plt.ylabel('True Label')
+    plt.title('Confusion Matrix')
+    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    print(f"Confusion matrix saved to {save_path}")
+
+def save_anomaly_histogram(id_scores, ood_scores, args):
+    save_path = os.path.join(args.output_dir, "ood_histogram.png")
+    plt.figure(figsize=(16,12))
+    plt.hist(id_scores, bins=30, color='red', alpha=0.6, label='Known (ID) samples')
+    plt.hist(ood_scores, bins=30, color='blue', alpha=0.6, label='Unknown (OOD) samples')
+    plt.axvline(x=args.ood_threshold, color='blue', linestyle='dotted', linewidth=2, label='Threshold')
+    plt.title("Anomaly Score Histogram")
+    plt.xlabel("Anomaly Score (1 - max_softmax)")
+    plt.ylabel("Frequency")
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(save_path)
+    plt.close()
+    print(f"Histogram saved to {save_path}")
 
 def save_accuracy_heatmap(mat, task_id, args):
-    """
-    주어진 numpy 배열(result)을 heatmap으로 그려 파일로 저장합니다.
-    """
-
-    filename = os.path.join(args.output_dir, f"accuracy_matrix_task{task_id+1}.png")
-    title = f"Accuracy Matrix up to Task {task_id+1}"
-
-    plt.figure(figsize=(6, 5))
+    save_path = os.path.join(args.output_dir, f"accuracy_matrix_task{task_id+1}.png")
+    plt.figure(figsize=(16,12))
     im = plt.imshow(mat, interpolation='nearest', cmap="Reds", vmin=0, vmax=100)
-    plt.title(title)
-    plt.xlabel("Task")
-    plt.ylabel("Task")
+    plt.xlabel("Trained up to Task")
+    plt.ylabel("Evaluated Task")
     plt.colorbar(im, label="Accuracy")
-
-
-    # 각 셀에 정확도 값을 텍스트로 표시
-    # for i in range(mat.shape[0]):
-    #     for j in range(mat.shape[1]):
-    #         if mat[i, j]:
-    #             plt.text(j, i, f"{mat[i, j]:.2f}", ha="center", va="center", color="white", fontsize=10)
     plt.xticks(np.arange(mat.shape[1]))
     plt.yticks(np.arange(mat.shape[0]))
-    ax = plt.gca()
-    ax.xaxis.tick_top()
-    ax.xaxis.set_label_position('top')
     plt.tight_layout()
-    plt.savefig(filename)
+    plt.savefig(save_path)
     plt.close()
-    print(f"Saved accuracy heatmap to {filename}")
+    print(f"Accuracy heatmap saved to {save_path}")
 
 # import torch.distributed as dist
 
