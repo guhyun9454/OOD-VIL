@@ -88,13 +88,12 @@ def get_dataset(dataset, transform_train, transform_val, mode, args,is_ood=False
     
     return dataset_train, dataset_val
 
-def get_ood_dataloader(dataset_name, args):
+def get_ood_dataset(dataset_name, args):
     if args.verbose:
         print(f"Loading OOD dataset: {dataset_name}")
-    dataset = get_dataset(dataset_name, transform_train=build_transform(True,args), transform_val=build_transform(False,args), mode=args.IL_mode, args=args)[1]
+    dataset = get_dataset(dataset_name, transform_train=build_transform(True,args), transform_val=build_transform(False,args), mode=args.IL_mode, args=args)[0]
     ood_dataset = UnknownWrapper(dataset, args.class_num)
-    ood_dataloader = torch.utils.data.DataLoader(ood_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
-    return ood_dataloader
+    return ood_dataset
 
 def set_data_config(args):
     if args.dataset == "iDigits":

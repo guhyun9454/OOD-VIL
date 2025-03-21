@@ -40,10 +40,10 @@ def save_accuracy_heatmap(mat, task_id, args):
 
 
     # 각 셀에 정확도 값을 텍스트로 표시
-    for i in range(mat.shape[0]):
-        for j in range(mat.shape[1]):
-            if mat[i, j]:
-                plt.text(j, i, f"{mat[i, j]:.2f}", ha="center", va="center", color="white", fontsize=10)
+    # for i in range(mat.shape[0]):
+    #     for j in range(mat.shape[1]):
+    #         if mat[i, j]:
+    #             plt.text(j, i, f"{mat[i, j]:.2f}", ha="center", va="center", color="white", fontsize=10)
     plt.xticks(np.arange(mat.shape[1]))
     plt.yticks(np.arange(mat.shape[0]))
     ax = plt.gca()
