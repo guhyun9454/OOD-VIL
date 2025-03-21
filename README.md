@@ -27,3 +27,6 @@ python main.py --dataset iDigits --num_tasks 5 --IL_mode cil --method FT --seed 
 ```bash
 python main.py --dataset iDigits --num_tasks 4 --IL_mode dil --method FT --seed 42 --batch-size 24 
 ```
+---
+This codebase is from VIL (Park, MY., Lee, JH., Park, GM. ECCV2024) https://github.com/KU-VGI/VIL
+
