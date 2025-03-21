@@ -211,7 +211,7 @@ class Engine:
         acc_matrix = np.zeros((args.num_tasks, args.num_tasks))
         for task_id in range(args.num_tasks):
             print(f"{f'Training on Task {task_id+1}/{args.num_tasks}':=^60}")
-            start = time.time()
+            train_start = time.time()
             for epoch in range(args.epochs):
                 epoch_start = time.time()
                 epoch_avg_loss, epoch_avg_acc = self.train_one_epoch(model, criterion, data_loader[task_id]['train'], optimizer, device, epoch, args)
@@ -220,12 +220,12 @@ class Engine:
 
                 if lr_scheduler is not None:
                     lr_scheduler.step(epoch)
-            train_duration = time.time() - start
+            train_duration = time.time() - train_start
             print(f"Task {task_id+1} training completed in {str(datetime.timedelta(seconds=int(train_duration)))}")
             print(f'{f"Testing on Task {task_id+1}/{args.num_tasks}":=^60}')
-            start = time.time()
+            eval_start = time.time()
             self.evaluate_till_now(model, data_loader, device, task_id, class_mask, acc_matrix, args)
-            eval_duration = time.time() - start
+            eval_duration = time.time() - eval_start
             print(f"Task {task_id+1} evaluation completed in {str(datetime.timedelta(seconds=int(eval_duration)))}")
 
             if args.output_dir:
@@ -244,11 +244,11 @@ class Engine:
         
         if args.ood_dataset:
             print(f"{'OOD Evaluation':=^60}")
-            start = time.time()
+            ood_start = time.time()
             all_id_datasets = torch.utils.data.ConcatDataset([dl['val'].dataset for dl in data_loader])
             id_loader = torch.utils.data.DataLoader(all_id_datasets, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=args.pin_mem)
             
             ood_loader = data_loader[-1]['ood']
             self.evaluate_ood(model, id_loader, ood_loader, device, args)
-            ood_duration = time.time() - start
+            ood_duration = time.time() - ood_start
             print(f"OOD evaluation completed in {str(datetime.timedelta(seconds=int(ood_duration)))}")
