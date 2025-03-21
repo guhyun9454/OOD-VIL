@@ -8,7 +8,7 @@ from timm.utils import accuracy
 from timm.models import create_model
 from sklearn.metrics import roc_auc_score
 from sklearn.metrics import confusion_matrix
-from utils import save_accuracy_heatmap
+from utils import save_accuracy_heatmap, save_anomaly_histogram, save_confusion_matrix_plot
 from continual_datasets.dataset_utils import RandomSampleWrapper  
 
 def load_model(args):
@@ -126,8 +126,7 @@ class Engine:
         id_size = len(id_datasets)
         ood_size = len(ood_dataset)
         min_size = min(id_size, ood_size)
-        if args.verbose:
-            print(f"ID dataset size: {id_size}, OOD dataset size: {ood_size}. Using {min_size} samples each for evaluation.")
+        if args.verbose: print(f"ID dataset size: {id_size}, OOD dataset size: {ood_size}. Using {min_size} samples each for evaluation.")
 
         # Use RandomSampleWrapper if dataset size is larger than min_size
         if id_size > min_size:
@@ -146,6 +145,9 @@ class Engine:
         all_pred = []
         binary_labels = []  # 0 for ID, 1 for OOD
         ood_scores_all = []  # 1 - max_softmax for each sample
+        id_true_list, id_pred_list = [], []
+        ood_true_list, ood_pred_list = [], []
+
 
         model.eval()
         with torch.no_grad():
@@ -156,11 +158,13 @@ class Engine:
                 softmax_outputs = F.softmax(outputs, dim=1)
                 max_softmax, pred_class = torch.max(softmax_outputs, dim=1)
                 # If max_softmax is below 0.5, predict as unknown
-                pred = torch.where(max_softmax < 0.5, torch.full_like(pred_class, args.nums_classes), pred_class)
+                pred = torch.where(max_softmax < args.ood_threshold, torch.full_like(pred_class, args.nums_classes), pred_class)
                 all_true.extend(targets.cpu().numpy())
                 all_pred.extend(pred.cpu().numpy())
                 binary_labels.extend([0] * inputs.size(0))
                 ood_scores_all.extend((1 - max_softmax).cpu().numpy())
+                id_true_list.extend(targets.cpu().numpy())
+                id_pred_list.extend(pred.cpu().numpy())
 
             # Process OOD data
             for inputs, targets in aligned_ood_loader:
@@ -168,17 +172,28 @@ class Engine:
                 outputs = model(inputs)
                 softmax_outputs = F.softmax(outputs, dim=1)
                 max_softmax, pred_class = torch.max(softmax_outputs, dim=1)
-                pred = torch.where(max_softmax < 0.5, torch.full_like(pred_class, args.nums_classes), pred_class)
+                pred = torch.where(max_softmax < args.ood_threshold, torch.full_like(pred_class, args.nums_classes), pred_class)
                 # For OOD, true label should be set to unknown_class
                 true_labels = torch.full_like(targets, fill_value=args.nums_classes)
                 all_true.extend(true_labels.cpu().numpy())
                 all_pred.extend(pred.cpu().numpy())
                 binary_labels.extend([1] * inputs.size(0))
                 ood_scores_all.extend((1 - max_softmax).cpu().numpy())
+                ood_true_list.extend(true_labels.cpu().numpy())
+                ood_pred_list.extend(pred.cpu().numpy())
 
         # Build confusion matrix: labels from 0 to (nums_classes - 1) and unknown_class
         labels = list(range(args.nums_classes+1)) 
         conf_matrix = confusion_matrix(all_true, all_pred, labels=labels)
+
+            # Compute ID and OOD accuracy separately
+        id_total = len(id_true_list)
+        ood_total = len(ood_true_list)
+        id_correct = sum(1 for t, p in zip(id_true_list, id_pred_list) if t == p)
+        ood_correct = sum(1 for t, p in zip(ood_true_list, ood_pred_list) if t == p)
+        acc_id = id_correct / id_total if id_total > 0 else 0.0
+        acc_ood = ood_correct / ood_total if ood_total > 0 else 0.0
+        h_score = 2 * acc_id * acc_ood / (acc_id + acc_ood) 
 
         # Compute AUROC for OOD detection using binary labels and ood scores
         try:
@@ -186,14 +201,14 @@ class Engine:
         except Exception as e:
             print("AUROC computation error:", e)
             auroc = 0.0
+        print(f"OOD Evaluation: AUROC: {auroc:.3f}, A_id: {acc_id:.3f}, A_ood: {acc_ood:.3f}  H_score: {h_score:.3f}")
 
         if args.verbose:
-            np.save(os.path.join(args.output_dir,"confusion_matrix.npy"), conf_matrix)
-            print("Confusion matrix saved as 'confusion_matrix.npy'")
-            print("Confusion Matrix:")
-            print(conf_matrix)
+            save_confusion_matrix_plot(conf_matrix, labels, args)
+            id_scores = [score for score, label in zip(ood_scores_all, binary_labels) if label == 0]
+            ood_scores = [score for score, label in zip(ood_scores_all, binary_labels) if label == 1]
+            save_anomaly_histogram(id_scores, ood_scores, args)
 
-        print(f"OOD Evaluation: AUROC: {auroc:.3f}")
         return conf_matrix, auroc
     
     def evaluate_till_now(self, model, data_loader, device, task_id, class_mask, acc_matrix, args):
