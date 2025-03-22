@@ -39,30 +39,6 @@ class MNIST_RGB(datasets.MNIST):
         self.data, self.targets = self._load_data()
         self.classes = [i for i in range(10)]
 
-    def _check_legacy_exist(self):
-        processed_folder_exists = os.path.exists(self.processed_folder)
-        if not processed_folder_exists:
-            return False
-
-        return all(
-            check_integrity(os.path.join(self.processed_folder, file)) for file in (self.training_file, self.test_file)
-        )
-
-    def _load_legacy_data(self):
-        # This is for BC only. We no longer cache the data in a custom binary, but simply read from the raw data
-        # directly.
-        data_file = self.training_file if self.train else self.test_file
-        return torch.load(os.path.join(self.processed_folder, data_file))
-
-    def _load_data(self):
-        image_file = f"{'train' if self.train else 't10k'}-images-idx3-ubyte"
-        data = read_image_file(os.path.join(self.raw_folder, image_file))
-
-        label_file = f"{'train' if self.train else 't10k'}-labels-idx1-ubyte"
-        targets = read_label_file(os.path.join(self.raw_folder, label_file))
-
-        return data, targets
-
     def __getitem__(self, index: int) -> Tuple[Any, Any]:
         """
         Args:
@@ -753,31 +729,23 @@ class CLEAR(torch.utils.data.Dataset):
         self.target_transform = target_transform
         self.mode = mode
         
-        if download:
-            self.download()
-        
         if self.train:
             src = os.path.join(self.root, "train_image_only", "labeled_images")
-        else:
-            src = os.path.join(self.root, "test",  "labeled_images")
-        
-        if not os.path.exists(src):
-            raise RuntimeError("Dataset not found. You can use download=True to download it.")
-        
-        if self.train:
             dst = os.path.join(self.root, f"train_{mode}")
         else:
+            src = os.path.join(self.root, "test",  "labeled_images")
             dst = os.path.join(self.root, f"test_{mode}")
-        
+                
         if not os.path.exists(dst):
+            if download:
+                self.download()
             self.split(src, dst)
+            if self.train:
+                rmtree(os.path.join(self.root, "train_image_only"))
+            else:
+                rmtree(os.path.join(self.root, "test"))
         self.fpath = dst
         
-        if self.train:
-            rmtree(os.path.join(self.root, "train_image_only"))
-        else:
-            rmtree(os.path.join(self.root, "test"))
-
         if self.mode not in ['cil', 'joint']:
             domain_list = [str(i) for i in range(1,6)]
             self.data = [datasets.ImageFolder(os.path.join(self.fpath, d), transform=transform) for d in domain_list]
@@ -842,8 +810,6 @@ class CLEAR(torch.utils.data.Dataset):
                         for f in files:
                             move(f, os.path.join(dst, c))
                 rmtree(domain_path)
-
-
     
     def download(self):
         os.makedirs(self.root, exist_ok=True)

@@ -16,9 +16,6 @@ def load_model(args):
         "vit_base_patch16_224",
         pretrained=args.pretrained,
         num_classes=args.nums_classes,
-        drop_rate=args.drop,
-        drop_path_rate=args.drop_path,
-        drop_block_rate=None,
     )
     return model
 
@@ -271,8 +268,8 @@ class Engine:
             eval_duration = time.time() - eval_start
             print(f"Task {task_id+1} evaluation completed in {str(datetime.timedelta(seconds=int(eval_duration)))}")
 
-            if args.output_dir:
-                checkpoint_dir = os.path.join(args.output_dir, 'checkpoint')
+            if args.save:
+                checkpoint_dir = os.path.join(args.save, 'checkpoint')
                 os.makedirs(checkpoint_dir, exist_ok=True)
                 checkpoint_path = os.path.join(checkpoint_dir, 'task{}_checkpoint.pth'.format(task_id+1))
                 checkpoint = {

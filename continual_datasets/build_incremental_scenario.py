@@ -152,15 +152,15 @@ def build_continual_dataloader(args):
         data_loader_train = torch.utils.data.DataLoader(
             dataset_train, sampler=sampler_train,
             batch_size=args.batch_size,
-            num_workers=args.num_workers,
-            pin_memory=args.pin_mem,
+            num_workers=4,
+            pin_memory=True,
         )
 
         data_loader_val = torch.utils.data.DataLoader(
             dataset_val, sampler=sampler_val,
             batch_size=args.batch_size,
-            num_workers=args.num_workers,
-            pin_memory=args.pin_mem,
+            num_workers=4,
+            pin_memory=True,
         )
 
         dataloader.append({'train': data_loader_train, 'val': data_loader_val})

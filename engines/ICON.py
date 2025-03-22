@@ -21,12 +21,13 @@ from sklearn.cluster import KMeans
 from timm.models import create_model
 
 def load_model(args):
+    init_ICON_args(args)
     model = create_model(
         "vit_base_patch16_224_ICON",
-        pretrained=args.pretrained, #True
+        pretrained=True,
         num_classes=args.nums_classes, #10
-        drop_rate=args.drop, #0.0
-        drop_path_rate=args.drop_path, #0.0
+        drop_rate=0.0,
+        drop_path_rate=0.0,
         drop_block_rate=None,
         adapt_blocks=args.adapt_blocks, #[0, 1, 2, 3, 4]
     )
@@ -222,7 +223,7 @@ class Engine():
             loss = criterion(logits, target) # (bs, class), (bs)
             
            
-            if self.args.use_cast_loss:
+            if self.args.CAST:
                 if len(self.adapter_vec)> args.k: 
                     cur_adapters = model.get_adapter()
                     self.cur_adapters = self.flatten_parameters(cur_adapters)
@@ -242,7 +243,7 @@ class Engine():
                             # sim += torch.matmul(diff_adapter, o)
                         # sim /= len(other)
                     orth_loss = args.beta * torch.abs(sim)
-                    if self.args.use_cast_loss:  
+                    if self.args.CAST:  
                         if orth_loss>0:
                             loss += orth_loss
                     
@@ -524,10 +525,10 @@ class Engine():
                 self.label_train_count[self.current_classes] += 1 
             test_stats = self.evaluate_till_now(model=model, data_loader=data_loader, device=device, 
                                         task_id=task_id, class_mask=class_mask, acc_matrix=acc_matrix, ema_model=ema_model, args=args)
-            if args.output_dir and utils.is_main_process():
-                Path(os.path.join(args.output_dir, 'checkpoint')).mkdir(parents=True, exist_ok=True)
+            if args.save and utils.is_main_process():
+                Path(os.path.join(args.save, 'checkpoint')).mkdir(parents=True, exist_ok=True)
                 
-                checkpoint_path = os.path.join(args.output_dir, 'checkpoint/task{}_checkpoint.pth'.format(task_id+1))
+                checkpoint_path = os.path.join(args.save, 'checkpoint/task{}_checkpoint.pth'.format(task_id+1))
                 state_dict = {
                         'model': model.state_dict(),
                         'ema_model': ema_model.state_dict() if ema_model is not None else None,
@@ -544,6 +545,29 @@ class Engine():
                 **{f'test_{k}': v for k, v in test_stats.items()},
                 'epoch': epoch,}
 
-            if args.output_dir and utils.is_main_process():
-                with open(os.path.join(args.output_dir, '{}_stats.txt'.format(datetime.datetime.now().strftime('log_%Y_%m_%d_%H_%M'))), 'a') as f:
+            if args.save and utils.is_main_process():
+                with open(os.path.join(args.save, '{}_stats.txt'.format(datetime.datetime.now().strftime('log_%Y_%m_%d_%H_%M'))), 'a') as f:
                     f.write(json.dumps(log_stats) + '\n')
+
+"""
+python main.py --dataset iDigits --num_tasks 20 --IL_mode vil --method ICON --seed 42 --batch-size 24 --IC  --CAST --d_threshold
+"""
+
+def init_ICON_args(args):
+    args.IC = True  
+    args.d_threshold = True  
+    args.gamma = 10.0  
+    args.thre = 0 
+    args.alpha = 1.0  
+
+    args.CAST = True 
+    args.beta = 0.01  
+    args.k = 2  
+    args.norm_cast = True 
+
+    args.adapt_blocks = [0, 1, 2, 3, 4] 
+    args.ema_decay = 0.9999  
+    args.num_freeze_epochs = 3  
+    args.eval_only_emas = False 
+
+    args.clip_grad = 0.0
