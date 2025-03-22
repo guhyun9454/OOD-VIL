@@ -36,7 +36,7 @@ def main(args):
         data_loader[-1]['ood'] = get_ood_dataset(args.ood_dataset, args)
 
     if args.develop_tasks: return
-     
+
     try:
         engine_module = importlib.import_module(f"engines.{args.method}")
     except ImportError:
@@ -94,7 +94,7 @@ if __name__ == '__main__':
     parser.add_argument('--epochs', default=5, type=int)
 
     # Model parameters
-    parser.add_argument('--method', default='ICON', type=str, help='Engine type to use (e.g., ICON, FT)')
+    parser.add_argument('--method', default='ICON',choices=['FT','ICON'], type=str, help='Engine type to use (e.g., ICON, FT)')
     parser.add_argument('--model', default=None, type=str, metavar='MODEL', help='Name of model to train')
     parser.add_argument('--pretrained', default=True, help='Load pretrained model or not')
 
@@ -119,7 +119,7 @@ if __name__ == '__main__':
 
     # Continual learning parameters
     parser.add_argument('--num_tasks', default=10, type=int, help='number of sequential tasks')
-    parser.add_argument('--IL_mode', type=str, default='cil', choices=['cil', 'dil', 'vil', 'ood_vil', 'joint'], help='Incremental Learning mode')
+    parser.add_argument('--IL_mode', type=str, default='cil', choices=['cil', 'dil', 'vil', 'joint'], help='Incremental Learning mode')
 
     # Misc (기타) parameters
     parser.add_argument('--print_freq', type=int, default=1000, help = 'The frequency of printing')

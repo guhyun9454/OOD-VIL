@@ -13,7 +13,7 @@ from torch.utils.model_zoo import tqdm
 from torchvision import transforms
 from continual_datasets.base_datasets import *
 
-def get_dataset(dataset, transform_train, transform_val, mode, args,is_ood=False):
+def get_dataset(dataset, transform_train, transform_val, mode, args):
     if dataset == 'MNIST':
         dataset_train = MNIST_RGB(args.data_path, train=True, download=True, transform=transform_train)
         dataset_val = MNIST_RGB(args.data_path, train=False, download=True, transform=transform_val)
@@ -43,8 +43,8 @@ def get_dataset(dataset, transform_train, transform_val, mode, args,is_ood=False
         dataset_val = DomainNet(args.data_path, train=False, download=True, transform=transform_val, mode=mode).data
 
     elif dataset == 'CLEAR':
-        dataset_train = CLEAR(args.data_path, train=True, download=True, transform=transform_train, mode=mode).data
-        dataset_val = CLEAR(args.data_path, train=False, download=True, transform=transform_val, mode=mode).data
+        dataset_train = CLEAR(args.data_path, train=True, download=True, transform=transform_train, mode=mode, args=args).data
+        dataset_val = CLEAR(args.data_path, train=False, download=True, transform=transform_val, mode=mode, args=args).data
         
     else:
         raise ValueError('Dataset {} not found.'.format(dataset))

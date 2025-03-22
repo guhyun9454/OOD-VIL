@@ -93,7 +93,6 @@ def build_continual_dataloader(args):
                 args=args,
             )
             domain_list = [f'D{i}' for i in range(len(dataset_train))]
-            class_mask
 
             if args.dataset in ['CORe50']:
                 splited_dataset = [(dataset_train[i], dataset_val) for i in range(len(dataset_train))]

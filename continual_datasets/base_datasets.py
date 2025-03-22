@@ -533,7 +533,6 @@ class CORe50(torch.utils.data.Dataset):
                             move(file, os.path.join(dst, label))
                     rmtree(session_folder)
 
-
 class DomainNet(torch.utils.data.Dataset):
     def __init__(self, root, train=True, transform=None, target_transform=None, download=False, mode='cil'):
         root = os.path.join(root, 'DomainNet')   
@@ -722,14 +721,15 @@ class CLEAR(torch.utils.data.Dataset):
     train_filename = "clear100-train-image-only.zip"
     test_filename  = "clear100-test.zip"
     
-    def __init__(self, root, train=True, transform=None, target_transform=None, download=False, mode=None):
+    def __init__(self, root, train=True, transform=None, target_transform=None, download=False, mode=None, args = None):
         root = os.path.join(root, 'CLEAR_100')
         self.root = os.path.expanduser(root)
         self.train = train
         self.transform = transform
         self.target_transform = target_transform
         self.mode = mode
-        
+        self.args = args
+
         if self.train:
             src = os.path.join(self.root, "train_image_only", "labeled_images")
             dst = os.path.join(self.root, f"train_{mode}")
@@ -748,7 +748,9 @@ class CLEAR(torch.utils.data.Dataset):
         self.fpath = dst
         
         if self.mode not in ['cil', 'joint']:
-            domain_list = [str(i) for i in range(1,6)]
+            if self.mode == 'dil': args.domain_num = 11
+            elif self.mode == 'vil': args.domain_num = 5
+            domain_list = [str(i) for i in range(0,args.domain_num)]
             self.data = [datasets.ImageFolder(os.path.join(self.fpath, d), transform=transform) for d in domain_list]
         else:
             self.data = datasets.ImageFolder(self.fpath, transform=transform)
@@ -768,8 +770,13 @@ class CLEAR(torch.utils.data.Dataset):
         
         if self.mode not in ['cil', 'joint']:
             # 도메인 "1"부터 "10"을 2개씩 묶어서 5개의 그룹으로 만듦
-            groups = [["1", "2"], ["3", "4"], ["5", "6"], ["7", "8"], ["9", "10"]]
-            for i, group in tqdm.tqdm(enumerate(groups, start=1), desc='Preprocessing'):
+            if self.mode == 'vil':
+                groups = [["1", "2"], ["3", "4"], ["5", "6"], ["7", "8"], ["9", "10"]]
+                self.args.domain_num = 5
+            elif self.mode == 'dil':
+                groups = [[str(i)] for i in range(0,11)]
+                self.args.domain_num = 11
+            for i, group in tqdm.tqdm(enumerate(groups, start=0), desc='Preprocessing'):
                 new_domain = str(i)
                 new_domain_path = os.path.join(dst, new_domain)
                 os.mkdir(new_domain_path)
