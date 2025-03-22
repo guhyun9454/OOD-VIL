@@ -26,8 +26,6 @@ warnings.filterwarnings("ignore","The given NumPy array is not writable, and PyT
 
 
 def main(args):
-    # utils.init_distributed_mode(args)
-    args.distributed = False
     args = set_data_config(args)
     device = torch.device(args.device)
 

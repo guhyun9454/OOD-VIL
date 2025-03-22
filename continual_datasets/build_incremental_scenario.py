@@ -63,7 +63,7 @@ def build_continual_dataloader(args):
             splited_dataset, class_mask = split_single_dataset(dataset_train, dataset_val, args)
             args.nums_classes = len(dataset_val.classes)
 
-    elif mode in ['dil', 'vil', 'ood_vil']:
+    elif mode in ['dil', 'vil']:
         if 'iDigits' in args.dataset:
             dataset_list = args.id_datasets
             splited_dataset = list()
@@ -140,7 +140,7 @@ def build_continual_dataloader(args):
         raise ValueError(f'Invalid mode: {mode}')
                 
 
-    if args.IL_mode in ['vil','ood_vil']:
+    if args.IL_mode in ['vil']:
         splited_dataset, class_mask, domain_list, args = build_vil_scenario(splited_dataset, args)
 
     for i in range(len(splited_dataset)):

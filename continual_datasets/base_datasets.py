@@ -1,23 +1,24 @@
 import os
 import shutil
+import glob
 import string
 import zipfile
-import glob
 from pathlib import Path
 from shutil import move, rmtree
 from typing import Any, Tuple, Union
+
 import numpy as np
 import torch
-from torchvision import datasets
-from torchvision.datasets.utils import download_url, check_integrity, verify_str_arg, download_and_extract_archive, extract_archive
 from PIL import Image
+from torchvision import datasets
+from torchvision.datasets.utils import (
+    download_url,
+    check_integrity,
+    verify_str_arg,
+    download_and_extract_archive,
+    extract_archive
+)
 import tqdm
-import hashlib
-import gzip
-import errno
-import tarfile
-import zipfile
-import codecs
 
 class MNIST_RGB(datasets.MNIST):
 
@@ -468,8 +469,7 @@ class CORe50(torch.utils.data.Dataset):
         self.url = 'http://bias.csr.unibo.it/maltoni/download/core50/core50_128x128.zip'
         self.filename = 'core50_128x128.zip'
 
-        # self.fpath = os.path.join(root, 'VIL_CORe50')
-        self.fpath = os.path.join(root, 'core50_128x128')
+        self.fpath = os.path.join(root, 'CORe50')
         
         if not os.path.isfile(self.fpath):
             if not download:
@@ -559,8 +559,7 @@ class CORe50(torch.utils.data.Dataset):
 
 class DomainNet(torch.utils.data.Dataset):
     def __init__(self, root, train=True, transform=None, target_transform=None, download=False, mode='cil'):
-        root = os.path.join(root, 'VIL_DomainNet')   
-        # root = os.path.join(root, 'DomainNet')   
+        root = os.path.join(root, 'DomainNet')   
         self.root = os.path.expanduser(root)
         self.transform = transform
         self.target_transform=target_transform
@@ -740,333 +739,137 @@ class DomainNet(torch.utils.data.Dataset):
                         move(src, dst)
                 rmtree(os.path.join(self.root, test_list.split('_')[0]))
 
-
-def gen_bar_updater():
-    pbar = tqdm.tqdm(total=None)
-
-    def bar_update(count, block_size, total_size):
-        if pbar.total is None and total_size:
-            pbar.total = total_size
-        progress_bytes = count * block_size
-        pbar.update(progress_bytes - pbar.n)
-
-    return bar_update
-
-
-def calculate_md5(fpath, chunk_size=1024 * 1024):
-    md5 = hashlib.md5()
-    with open(fpath, 'rb') as f:
-        for chunk in iter(lambda: f.read(chunk_size), b''):
-            md5.update(chunk)
-    return md5.hexdigest()
-
-
-def check_md5(fpath, md5, **kwargs):
-    return md5 == calculate_md5(fpath, **kwargs)
-
-
-def check_integrity(fpath, md5=None):
-    if not os.path.isfile(fpath):
-        return False
-    if md5 is None:
-        return True
-    return check_md5(fpath, md5)
-
-
-def makedir_exist_ok(dirpath):
-    """
-    Python2 support for os.makedirs(.., exist_ok=True)
-    """
-    try:
-        os.makedirs(dirpath)
-    except OSError as e:
-        if e.errno == errno.EEXIST:
-            pass
+class CLEAR(torch.utils.data.Dataset):
+    train_url = "https://huggingface.co/datasets/elvishelvis6/CLEAR-Continual_Learning_Benchmark/resolve/main/clear100-train-image-only.zip"
+    test_url  = "https://huggingface.co/datasets/elvishelvis6/CLEAR-Continual_Learning_Benchmark/resolve/main/clear100-test.zip"
+    train_filename = "clear100-train-image-only.zip"
+    test_filename  = "clear100-test.zip"
+    
+    def __init__(self, root, train=True, transform=None, target_transform=None, download=False, mode=None):
+        root = os.path.join(root, 'CLEAR_100')
+        self.root = os.path.expanduser(root)
+        self.train = train
+        self.transform = transform
+        self.target_transform = target_transform
+        self.mode = mode
+        
+        if download:
+            self.download()
+        
+        if self.train:
+            src = os.path.join(self.root, "train_image_only", "labeled_images")
         else:
-            raise
+            src = os.path.join(self.root, "test",  "labeled_images")
+        
+        if not os.path.exists(src):
+            raise RuntimeError("Dataset not found. You can use download=True to download it.")
+        
+        if self.train:
+            dst = os.path.join(self.root, f"train_{mode}")
+        else:
+            dst = os.path.join(self.root, f"test_{mode}")
+        
+        if not os.path.exists(dst):
+            self.split(src, dst)
+        self.fpath = dst
+        
+        if self.train:
+            rmtree(os.path.join(self.root, "train_image_only"))
+        else:
+            rmtree(os.path.join(self.root, "test"))
+
+        if self.mode not in ['cil', 'joint']:
+            domain_list = [str(i) for i in range(1,6)]
+            self.data = [datasets.ImageFolder(os.path.join(self.fpath, d), transform=transform) for d in domain_list]
+        else:
+            self.data = datasets.ImageFolder(self.fpath, transform=transform)
+    
+    def split(self, src, dst):
+        """
+        src: 원본 데이터가 있는 폴더 (예: .../labeled_images)
+        dst: 최종 train 또는 test 폴더 (예: .../OODVIL_train 또는 .../OODVIL_test)
+        
+        mode에 따라 두 가지로 동작:
+        1) mode not in ['cil','joint']: 도메인별로 폴더를 그대로 옮기는데, 
+            여기서는 도메인 "1"~"10"을 2개씩 묶어 5개의 도메인으로 재구성.
+        2) mode in ['cil','joint']: 모든 도메인의 데이터를 클래스별로 합쳐 단일 폴더 구조로 재구성.
+        """
+
+        os.mkdir(dst)
+        
+        if self.mode not in ['cil', 'joint']:
+            # 도메인 "1"부터 "10"을 2개씩 묶어서 5개의 그룹으로 만듦
+            groups = [["1", "2"], ["3", "4"], ["5", "6"], ["7", "8"], ["9", "10"]]
+            for i, group in tqdm.tqdm(enumerate(groups, start=1), desc='Preprocessing'):
+                new_domain = str(i)
+                new_domain_path = os.path.join(dst, new_domain)
+                os.mkdir(new_domain_path)
+                for d in group:
+                    src_d = os.path.join(src, d)
+                    if not os.path.exists(src_d):
+                        print(f"Warning: 도메인 폴더 {src_d}가 존재하지 않습니다.")
+                        continue
+                    for class_name in os.listdir(src_d):
+                        class_src = os.path.join(src_d, class_name)
+                        if os.path.isdir(class_src):
+                            class_dst = os.path.join(new_domain_path, class_name)
+                            if not os.path.exists(class_dst):
+                                os.mkdir(class_dst)
+                            for ext in ['*.png', '*.jpg']:
+                                files = glob.glob(os.path.join(class_src, ext))
+                                for f in files:
+                                    move(f, class_dst)
+                            rmtree(class_src)
+                for d in group:
+                    src_d = os.path.join(src, d)
+                    if os.path.exists(src_d):
+                        rmtree(src_d)
+        else:
+            domain_list = sorted([d for d in os.listdir(src) if os.path.isdir(os.path.join(src, d))])
+            sample_domain = os.path.join(src, domain_list[0])
+            class_names = sorted([c for c in os.listdir(sample_domain) if os.path.isdir(os.path.join(sample_domain, c))])
+            for c in class_names:
+                os.mkdir(os.path.join(dst, c))
+            exts = ['*.png', '*.jpg']
+            for d in tqdm.tqdm(domain_list,desc='Preprocessing'):
+                domain_path = os.path.join(src, d)
+                for c in os.listdir(domain_path):
+                    class_path = os.path.join(domain_path, c)
+                    if os.path.isdir(class_path):
+                        files = []
+                        for ext in exts:
+                            files.extend(glob.glob(os.path.join(class_path, ext)))
+                        for f in files:
+                            move(f, os.path.join(dst, c))
+                rmtree(domain_path)
 
 
-def download_url(url, root, filename=None, md5=None):
-    """Download a file from a url and place it in root.
-    Args:
-        url (str): URL to download file from
-        root (str): Directory to place downloaded file in
-        filename (str, optional): Name to save the file under. If None, use the basename of the URL
-        md5 (str, optional): MD5 checksum of the download. If None, do not check
-    """
-    from six.moves import urllib
-
-    root = os.path.expanduser(root)
-    if not filename:
-        filename = os.path.basename(url)
-    fpath = os.path.join(root, filename)
-
-    makedir_exist_ok(root)
-
-    # downloads file
-    if check_integrity(fpath, md5):
-        print('Using downloaded and verified file: ' + fpath)
-    else:
-        try:
-            print('Downloading ' + url + ' to ' + fpath)
-            urllib.request.urlretrieve(
-                url, fpath,
-                reporthook=gen_bar_updater()
-            )
-        except (urllib.error.URLError, IOError) as e:
-            if url[:5] == 'https':
-                url = url.replace('https:', 'http:')
-                print('Failed download. Trying https -> http instead.'
-                      ' Downloading ' + url + ' to ' + fpath)
-                urllib.request.urlretrieve(
-                    url, fpath,
-                    reporthook=gen_bar_updater()
-                )
+    
+    def download(self):
+        os.makedirs(self.root, exist_ok=True)
+        if self.train:
+            train_zip = os.path.join(self.root, self.train_filename)
+            if not os.path.exists(train_zip):
+                print(f"Downloading train data from {self.train_url} ...")
+                download_url(self.train_url, self.root, self.train_filename)
             else:
-                raise e
-
-
-def list_dir(root, prefix=False):
-    """List all directories at a given root
-    Args:
-        root (str): Path to directory whose folders need to be listed
-        prefix (bool, optional): If true, prepends the path to each result, otherwise
-            only returns the name of the directories found
-    """
-    root = os.path.expanduser(root)
-    directories = list(
-        filter(
-            lambda p: os.path.isdir(os.path.join(root, p)),
-            os.listdir(root)
-        )
-    )
-
-    if prefix is True:
-        directories = [os.path.join(root, d) for d in directories]
-
-    return directories
-
-
-def list_files(root, suffix, prefix=False):
-    """List all files ending with a suffix at a given root
-    Args:
-        root (str): Path to directory whose folders need to be listed
-        suffix (str or tuple): Suffix of the files to match, e.g. '.png' or ('.jpg', '.png').
-            It uses the Python "str.endswith" method and is passed directly
-        prefix (bool, optional): If true, prepends the path to each result, otherwise
-            only returns the name of the files found
-    """
-    root = os.path.expanduser(root)
-    files = list(
-        filter(
-            lambda p: os.path.isfile(os.path.join(root, p)) and p.endswith(suffix),
-            os.listdir(root)
-        )
-    )
-
-    if prefix is True:
-        files = [os.path.join(root, d) for d in files]
-
-    return files
-
-
-def download_file_from_google_drive(file_id, root, filename=None, md5=None):
-    """Download a Google Drive file from  and place it in root.
-    Args:
-        file_id (str): id of file to be downloaded
-        root (str): Directory to place downloaded file in
-        filename (str, optional): Name to save the file under. If None, use the id of the file.
-        md5 (str, optional): MD5 checksum of the download. If None, do not check
-    """
-    # Based on https://stackoverflow.com/questions/38511444/python-download-files-from-google-drive-using-url
-    import requests
-    url = "https://docs.google.com/uc?export=download"
-
-    root = os.path.expanduser(root)
-    if not filename:
-        filename = file_id
-    fpath = os.path.join(root, filename)
-
-    makedir_exist_ok(root)
-
-    if os.path.isfile(fpath) and check_integrity(fpath, md5):
-        print('Using downloaded and verified file: ' + fpath)
-    else:
-        session = requests.Session()
-
-        response = session.get(url, params={'id': file_id}, stream=True)
-        token = _get_confirm_token(response)
-
-        if token:
-            params = {'id': file_id, 'confirm': token}
-            response = session.get(url, params=params, stream=True)
-
-        _save_response_content(response, fpath)
-
-
-def _get_confirm_token(response):
-    for key, value in response.cookies.items():
-        if key.startswith('download_warning'):
-            return value
-
-    return None
-
-
-def _save_response_content(response, destination, chunk_size=32768):
-    with open(destination, "wb") as f:
-        pbar = tqdm(total=None)
-        progress = 0
-        for chunk in response.iter_content(chunk_size):
-            if chunk:  # filter out keep-alive new chunks
-                f.write(chunk)
-                progress += len(chunk)
-                pbar.update(progress - pbar.n)
-        pbar.close()
-
-
-def _is_tar(filename):
-    return filename.endswith(".tar")
-
-
-def _is_targz(filename):
-    return filename.endswith(".tar.gz")
-
-
-def _is_gzip(filename):
-    return filename.endswith(".gz") and not filename.endswith(".tar.gz")
-
-
-def _is_zip(filename):
-    return filename.endswith(".zip")
-
-
-def extract_archive(from_path, to_path=None, remove_finished=False):
-    if to_path is None:
-        to_path = os.path.dirname(from_path)
-
-    if _is_tar(from_path):
-        with tarfile.open(from_path, 'r') as tar:
-            tar.extractall(path=to_path)
-    elif _is_targz(from_path):
-        with tarfile.open(from_path, 'r:gz') as tar:
-            tar.extractall(path=to_path)
-    elif _is_gzip(from_path):
-        to_path = os.path.join(to_path, os.path.splitext(os.path.basename(from_path))[0])
-        with open(to_path, "wb") as out_f, gzip.GzipFile(from_path) as zip_f:
-            out_f.write(zip_f.read())
-    elif _is_zip(from_path):
-        with zipfile.ZipFile(from_path, 'r') as z:
-            z.extractall(to_path)
-    else:
-        raise ValueError("Extraction of {} not supported".format(from_path))
-
-    if remove_finished:
-        os.remove(from_path)
-
-
-def download_and_extract_archive(url, download_root, extract_root=None, filename=None,
-                                 md5=None, remove_finished=False):
-    download_root = os.path.expanduser(download_root)
-    if extract_root is None:
-        extract_root = download_root
-    if not filename:
-        filename = os.path.basename(url)
-
-    download_url(url, download_root, filename, md5)
-
-    archive = os.path.join(download_root, filename)
-    print("Extracting {} to {}".format(archive, extract_root))
-    extract_archive(archive, extract_root, remove_finished)
-
-
-def iterable_to_str(iterable):
-    return "'" + "', '".join([str(item) for item in iterable]) + "'"
-
-
-def verify_str_arg(value, arg=None, valid_values=None, custom_msg=None):
-    if not isinstance(value, torch._six.string_classes):
-        if arg is None:
-            msg = "Expected type str, but got type {type}."
+                print(f"Train zip file {train_zip} already exists.")
+            train_extract_dir = os.path.join(self.root, "train_image_only")
+            if not os.path.exists(train_extract_dir):
+                print(f"Extracting {train_zip} ...")
+                extract_archive(train_zip, self.root)
+            else:
+                print(f"Train extract directory {train_extract_dir} already exists.")
         else:
-            msg = "Expected type str for argument {arg}, but got type {type}."
-        msg = msg.format(type=type(value), arg=arg)
-        raise ValueError(msg)
-
-    if valid_values is None:
-        return value
-
-    if value not in valid_values:
-        if custom_msg is not None:
-            msg = custom_msg
-        else:
-            msg = ("Unknown value '{value}' for argument {arg}. "
-                   "Valid values are {{{valid_values}}}.")
-            msg = msg.format(value=value, arg=arg,
-                             valid_values=iterable_to_str(valid_values))
-        raise ValueError(msg)
-
-    return value
-
-
-def get_int(b):
-    return int(codecs.encode(b, 'hex'), 16)
-
-
-def open_maybe_compressed_file(path):
-    """Return a file object that possibly decompresses 'path' on the fly.
-       Decompression occurs when argument `path` is a string and ends with '.gz' or '.xz'.
-    """
-    if not isinstance(path, torch._six.string_classes):
-        return path
-    if path.endswith('.gz'):
-        import gzip
-        return gzip.open(path, 'rb')
-    if path.endswith('.xz'):
-        import lzma
-        return lzma.open(path, 'rb')
-    return open(path, 'rb')
-
-
-def read_sn3_pascalvincent_tensor(path, strict=True):
-    """Read a SN3 file in "Pascal Vincent" format (Lush file 'libidx/idx-io.lsh').
-       Argument may be a filename, compressed filename, or file object.
-    """
-    # typemap
-    if not hasattr(read_sn3_pascalvincent_tensor, 'typemap'):
-        read_sn3_pascalvincent_tensor.typemap = {
-            8: (torch.uint8, np.uint8, np.uint8),
-            9: (torch.int8, np.int8, np.int8),
-            11: (torch.int16, np.dtype('>i2'), 'i2'),
-            12: (torch.int32, np.dtype('>i4'), 'i4'),
-            13: (torch.float32, np.dtype('>f4'), 'f4'),
-            14: (torch.float64, np.dtype('>f8'), 'f8')}
-    # read
-    with open_maybe_compressed_file(path) as f:
-        data = f.read()
-    # parse
-    magic = get_int(data[0:4])
-    nd = magic % 256
-    ty = magic // 256
-    assert nd >= 1 and nd <= 3
-    assert ty >= 8 and ty <= 14
-    m = read_sn3_pascalvincent_tensor.typemap[ty]
-    s = [get_int(data[4 * (i + 1): 4 * (i + 2)]) for i in range(nd)]
-    parsed = np.frombuffer(data, dtype=m[1], offset=(4 * (nd + 1)))
-    assert parsed.shape[0] == np.prod(s) or not strict
-    return torch.from_numpy(parsed.astype(m[2], copy=False)).view(*s)
-
-
-def read_label_file(path):
-    with open(path, 'rb') as f:
-        x = read_sn3_pascalvincent_tensor(f, strict=False)
-    assert(x.dtype == torch.uint8)
-    assert(x.ndimension() == 1)
-    return x.long()
-
-
-def read_image_file(path):
-    with open(path, 'rb') as f:
-        x = read_sn3_pascalvincent_tensor(f, strict=False)
-    assert(x.dtype == torch.uint8)
-    assert(x.ndimension() == 3)
-    return x
+            test_zip  = os.path.join(self.root, self.test_filename)
+            if not os.path.exists(test_zip):
+                print(f"Downloading test data from {self.test_url} ...")
+                download_url(self.test_url, self.root, self.test_filename)
+            else:
+                print(f"Test zip file {test_zip} already exists.")   
+            test_extract_dir = os.path.join(self.root, "test")
+            if not os.path.exists(test_extract_dir):
+                print(f"Extracting {test_zip} ...")
+                extract_archive(test_zip, self.root)
+            else:
+                print(f"Test extract directory {test_extract_dir} already exists.")

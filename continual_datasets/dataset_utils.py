@@ -22,14 +22,6 @@ def get_dataset(dataset, transform_train, transform_val, mode, args,is_ood=False
         dataset_train = SVHN(args.data_path, split='train', download=True, transform=transform_train)
         dataset_val = SVHN(args.data_path, split='test', download=True, transform=transform_val)
 
-    elif dataset == 'CORe50':
-        dataset_train = CORe50(args.data_path, train=True, download=True, transform=transform_train, mode=mode).data
-        dataset_val = CORe50(args.data_path, train=False, download=True, transform=transform_val, mode=mode).data
-
-    elif dataset == 'DomainNet':
-        dataset_train = DomainNet(args.data_path, train=True, download=True, transform=transform_train, mode=mode).data
-        dataset_val = DomainNet(args.data_path, train=False, download=True, transform=transform_val, mode=mode).data
-
     elif dataset == 'MNISTM':
         dataset_train = MNISTM(args.data_path, train=True, download=True, transform=transform_train)
         dataset_val = MNISTM(args.data_path, train=False, download=True, transform=transform_val)
@@ -42,6 +34,18 @@ def get_dataset(dataset, transform_train, transform_val, mode, args,is_ood=False
         dataset_train = EMNIST_RGB(args.data_path, train=True, download=True, transform=transform_train, num_random_classes=10, split='letters')
         dataset_val = EMNIST_RGB(args.data_path, train=False, download=True, transform=transform_val, num_random_classes=10, split='letters')
 
+    elif dataset == 'CORe50':
+        dataset_train = CORe50(args.data_path, train=True, download=True, transform=transform_train, mode=mode).data
+        dataset_val = CORe50(args.data_path, train=False, download=True, transform=transform_val, mode=mode).data
+
+    elif dataset == 'DomainNet':
+        dataset_train = DomainNet(args.data_path, train=True, download=True, transform=transform_train, mode=mode).data
+        dataset_val = DomainNet(args.data_path, train=False, download=True, transform=transform_val, mode=mode).data
+
+    elif dataset == 'CLEAR':
+        dataset_train = CLEAR(args.data_path, train=True, download=True, transform=transform_train, mode=mode).data
+        dataset_val = CLEAR(args.data_path, train=False, download=True, transform=transform_val, mode=mode).data
+        
     else:
         raise ValueError('Dataset {} not found.'.format(dataset))
     
@@ -100,13 +104,15 @@ def set_data_config(args):
         args.class_num = 10
         args.domain_num = 4
         args.id_datasets = ['MNIST', 'SVHN', 'MNISTM', 'SynDigit']
-
     elif args.dataset == "DomainNet":
         args.class_num = 345
         args.domain_num = 6
     elif args.dataset == "CORe50":
         args.class_num = 50
         args.domain_num = 8
+    elif args.dataset == "CLEAR":
+        args.class_num = 100
+        args.domain_num = 5
     else:
         raise ValueError(f"Unknown dataset: {args.dataset}")
     return args
