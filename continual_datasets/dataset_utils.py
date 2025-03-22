@@ -91,7 +91,7 @@ def get_dataset(dataset, transform_train, transform_val, mode, args,is_ood=False
 def get_ood_dataset(dataset_name, args):
     if args.verbose:
         print(f"Loading OOD dataset: {dataset_name}")
-    dataset = get_dataset(dataset_name, transform_train=build_transform(True,args), transform_val=build_transform(False,args), mode=args.IL_mode, args=args)[0]
+    dataset = get_dataset(dataset_name, transform_train=build_transform(True,args), transform_val=build_transform(False,args), mode='joint', args=args)[0]
     ood_dataset = UnknownWrapper(dataset, args.class_num)
     return ood_dataset
 
