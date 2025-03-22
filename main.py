@@ -34,7 +34,9 @@ def main(args):
     data_loader, class_mask, domain_list = build_continual_dataloader(args)
     if args.ood_dataset:
         data_loader[-1]['ood'] = get_ood_dataset(args.ood_dataset, args)
-    
+
+    if args.develop_tasks: return
+     
     try:
         engine_module = importlib.import_module(f"engines.{args.method}")
     except ImportError:
@@ -121,6 +123,7 @@ if __name__ == '__main__':
 
     # Misc (기타) parameters
     parser.add_argument('--print_freq', type=int, default=1000, help = 'The frequency of printing')
+    parser.add_argument('--develop_tasks', action='store_true', default=False)
     parser.add_argument('--develop', action='store_true', default=False)
     parser.add_argument('--verbose', action='store_true', default=False)
 

@@ -15,7 +15,7 @@ def load_model(args):
     model = create_model(
         "vit_base_patch16_224",
         pretrained=args.pretrained,
-        num_classes=args.nums_classes,
+        num_classes=args.num_classes,
     )
     return model
 
@@ -115,7 +115,7 @@ class Engine:
         Revised OOD evaluation:
         - Align ID and OOD datasets to the same number of samples.
         - For each sample, compute softmax outputs and determine prediction: if max_softmax < 0.5, predict as unknown (args.unknown_class), otherwise use argmax.
-        - Combine predictions from ID and OOD data to build a (nums_classes+1) x (nums_classes+1) confusion matrix.
+        - Combine predictions from ID and OOD data to build a (num_classes+1) x (num_classes+1) confusion matrix.
         - Compute AUROC using binary labels (0 for ID, 1 for OOD) and ood scores (1 - max_softmax).
         """
 
@@ -155,7 +155,7 @@ class Engine:
                 softmax_outputs = F.softmax(outputs, dim=1)
                 max_softmax, pred_class = torch.max(softmax_outputs, dim=1)
                 # If max_softmax is below 0.5, predict as unknown
-                pred = torch.where(max_softmax < args.ood_threshold, torch.full_like(pred_class, args.nums_classes), pred_class)
+                pred = torch.where(max_softmax < args.ood_threshold, torch.full_like(pred_class, args.num_classes), pred_class)
                 all_true.extend(targets.cpu().numpy())
                 all_pred.extend(pred.cpu().numpy())
                 binary_labels.extend([0] * inputs.size(0))
@@ -169,9 +169,9 @@ class Engine:
                 outputs = model(inputs)
                 softmax_outputs = F.softmax(outputs, dim=1)
                 max_softmax, pred_class = torch.max(softmax_outputs, dim=1)
-                pred = torch.where(max_softmax < args.ood_threshold, torch.full_like(pred_class, args.nums_classes), pred_class)
+                pred = torch.where(max_softmax < args.ood_threshold, torch.full_like(pred_class, args.num_classes), pred_class)
                 # For OOD, true label should be set to unknown_class
-                true_labels = torch.full_like(targets, fill_value=args.nums_classes)
+                true_labels = torch.full_like(targets, fill_value=args.num_classes)
                 all_true.extend(true_labels.cpu().numpy())
                 all_pred.extend(pred.cpu().numpy())
                 binary_labels.extend([1] * inputs.size(0))
@@ -179,8 +179,8 @@ class Engine:
                 ood_true_list.extend(true_labels.cpu().numpy())
                 ood_pred_list.extend(pred.cpu().numpy())
 
-        # Build confusion matrix: labels from 0 to (nums_classes - 1) and unknown_class
-        labels = list(range(args.nums_classes+1)) 
+        # Build confusion matrix: labels from 0 to (num_classes - 1) and unknown_class
+        labels = list(range(args.num_classes+1)) 
         conf_matrix = confusion_matrix(all_true, all_pred, labels=labels)
 
             # Compute ID and OOD accuracy separately

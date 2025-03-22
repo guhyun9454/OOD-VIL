@@ -46,7 +46,7 @@ def build_continual_dataloader(args):
 
             #splited_dataset = [(train, val), (train, val), (train, val), (train, val), (train, val)]
             #class_mask = [[0,1], [2,3], [4,5], [6,7], [8,9]]
-            args.nums_classes = len(splited_dataset[0][1].datasets[0].dataset.classes)
+            args.num_classes = len(splited_dataset[0][1].datasets[0].dataset.classes)
             class_mask = np.unique(np.array(mask), axis=0).tolist()[0] 
             #domain_list = ["D0123", "D0123", "D0123", "D0123", "D0123"]
             domain_list = [f'D{"".join(map(str, range(len(dataset_list))))}'] * args.num_tasks
@@ -58,10 +58,11 @@ def build_continual_dataloader(args):
                 transform_val=transform_val,
                 mode=mode,
                 args=args,
-            )
+            )   
 
             splited_dataset, class_mask = split_single_dataset(dataset_train, dataset_val, args)
-            args.nums_classes = len(dataset_val.classes)
+            domain_list = ["D0"] * args.num_tasks
+            args.num_classes = len(dataset_val.classes)
 
     elif mode in ['dil', 'vil']:
         if 'iDigits' in args.dataset:
@@ -78,9 +79,9 @@ def build_continual_dataloader(args):
                 )
                 splited_dataset.append((dataset_train, dataset_val))
             #splited_dataset = [(train, val), (train, val), (train, val), (train, val)] 각 d0,d1,d2,d3
-            args.nums_classes = len(dataset_val.classes)
+            args.num_classes = len(dataset_val.classes)
             if mode == 'dil':
-                class_mask = [[j for j in range(args.nums_classes)] for i in range(len(splited_dataset)) ]
+                class_mask = [[j for j in range(args.num_classes)] for i in range(len(splited_dataset)) ]
                 domain_list = [f'D{i}' for i in range(len(splited_dataset)) ]
         
         else:
@@ -91,13 +92,17 @@ def build_continual_dataloader(args):
                 mode=mode,
                 args=args,
             )
+            domain_list = [f'D{i}' for i in range(len(dataset_train))]
+            class_mask
 
             if args.dataset in ['CORe50']:
                 splited_dataset = [(dataset_train[i], dataset_val) for i in range(len(dataset_train))]
-                args.nums_classes = len(dataset_val.classes)
+                args.num_classes = len(dataset_val.classes)
+                class_mask = [list(dataset_val.classes) for i in range(args.num_tasks)]
             else:
                 splited_dataset = [(dataset_train[i], dataset_val[i]) for i in range(len(dataset_train))]
-                args.nums_classes = len(dataset_val[0].classes)
+                args.num_classes = len(dataset_val[0].classes)
+                class_mask = [list(dataset_val[0].classes) for i in range(args.num_tasks)]
     
     elif mode in ['joint']:
         if 'iDigits' in args.dataset:
@@ -114,14 +119,11 @@ def build_continual_dataloader(args):
                 )
                 train.append(dataset_train)
                 val.append(dataset_val)
-                args.nums_classes = len(dataset_val.classes)
+                args.num_classes = len(dataset_val.classes)
 
             dataset_train = torch.utils.data.ConcatDataset(train)
             dataset_val = torch.utils.data.ConcatDataset(val)
-            splited_dataset = [(dataset_train, dataset_val)]
-
-            class_mask = None
-        
+            splited_dataset = [(dataset_train, dataset_val)]        
         else:
             dataset_train, dataset_val = get_dataset(
                 dataset=args.dataset,
@@ -133,9 +135,8 @@ def build_continual_dataloader(args):
 
             splited_dataset = [(dataset_train, dataset_val)]
 
-            args.nums_classes = len(dataset_val.classes)
-            class_mask = None
-            
+            args.num_classes = len(dataset_val.classes)
+
     else:
         raise ValueError(f'Invalid mode: {mode}')
                 
@@ -167,6 +168,7 @@ def build_continual_dataloader(args):
 
     if args.verbose:
         print(f"{'TASK INFO':=^60}")
+        print(f"{'IL mode':<20} => {args.IL_mode}")
         print(f"{'Dataset':<20} => {args.dataset}")
         print(f"{'Number of tasks':<20} => {args.num_tasks}")
         print(f"{'Number of classes':<20} => {args.class_num}")
@@ -175,8 +177,7 @@ def build_continual_dataloader(args):
         print("class_mask:", class_mask)
         print("dataloader: ",len(dataloader))
         print(f"{'Sequence of Tasks':=^60}")    
-        num_tasks = args.num_tasks
-        for t_id in range(num_tasks):
+        for t_id in range(args.num_tasks):
             dom_info = domain_list[t_id] if domain_list is not None else "N/A"
             cls_info = class_mask[t_id] if class_mask is not None else "N/A"
             print(f"Task {t_id+1} => domain(s): {dom_info}, classes: {cls_info}")
@@ -186,11 +187,11 @@ def build_continual_dataloader(args):
 
 def split_single_dataset(dataset_train, dataset_val, args):
     #CIL 세팅
-    nums_classes = len(dataset_val.classes) # [0,1,2,3,4,5,6,7,8,9] -> 10
-    assert nums_classes % args.num_tasks == 0 # 10 % 5 = 0
-    classes_per_task = nums_classes // args.num_tasks # 10 // 5 = 2
+    num_classes = len(dataset_val.classes) # [0,1,2,3,4,5,6,7,8,9] -> 10
+    assert num_classes % args.num_tasks == 0 # 10 % 5 = 0
+    classes_per_task = num_classes // args.num_tasks # 10 // 5 = 2
 
-    labels = [i for i in range(nums_classes)] # [0,1,2,3,4,5,6,7,8,9]
+    labels = [i for i in range(num_classes)] # [0,1,2,3,4,5,6,7,8,9]
     
     split_datasets = list() # [[train, val], [train, val], [train, val], [train, val], [train, val]]
     mask = list() # [[0,1], [2,3], [4,5], [6,7], [8,9]]
