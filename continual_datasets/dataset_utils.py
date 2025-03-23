@@ -17,6 +17,10 @@ def get_dataset(dataset, transform_train, transform_val, mode, args):
     if dataset == 'MNIST':
         dataset_train = MNIST_RGB(args.data_path, train=True, download=True, transform=transform_train)
         dataset_val = MNIST_RGB(args.data_path, train=False, download=True, transform=transform_val)
+        
+    elif dataset == 'FashionMNIST':
+        dataset_train = FashionMNIST_RGB(args.data_path, train=True, download=True, transform=transform_train)
+        dataset_val = FashionMNIST_RGB(args.data_path, train=False, download=True, transform=transform_val)
     
     elif dataset == 'SVHN':
         dataset_train = SVHN(args.data_path, split='train', download=True, transform=transform_train)

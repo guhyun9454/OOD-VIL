@@ -11,6 +11,8 @@ import numpy as np
 import torch
 from PIL import Image
 from torchvision import datasets
+from torchvision.datasets.mnist import read_image_file, read_label_file
+
 from torchvision.datasets.utils import (
     download_url,
     check_integrity,

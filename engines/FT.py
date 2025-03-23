@@ -135,8 +135,8 @@ class Engine:
         else:
             ood_dataset_aligned = ood_dataset
 
-        aligned_id_loader = torch.utils.data.DataLoader(id_dataset_aligned, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
-        aligned_ood_loader = torch.utils.data.DataLoader(ood_dataset_aligned, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
+        aligned_id_loader = torch.utils.data.DataLoader(id_dataset_aligned, batch_size=args.batch_size, shuffle=False, num_workers=4)
+        aligned_ood_loader = torch.utils.data.DataLoader(ood_dataset_aligned, batch_size=args.batch_size, shuffle=False, num_workers=4)
 
         all_true = []
         all_pred = []
@@ -232,15 +232,7 @@ class Engine:
             result = np.where(np.triu(np.ones_like(sub_matrix, dtype=bool)), sub_matrix, np.nan)
             save_accuracy_heatmap(result, task_id, args)
 
-        if task_id == args.num_tasks - 1 and args.ood_dataset:
-            print(f"{'OOD Evaluation':=^60}")
-            ood_start = time.time()
-            all_id_datasets = torch.utils.data.ConcatDataset([dl['val'].dataset for dl in data_loader])
             
-            ood_loader = data_loader[-1]['ood']
-            self.evaluate_ood(model, all_id_datasets, ood_loader, device, args)
-            ood_duration = time.time() - ood_start
-            print(f"OOD evaluation completed in {str(datetime.timedelta(seconds=int(ood_duration)))}")
 
     def train_and_evaluate(self, model, criterion, data_loader, optimizer, lr_scheduler, device, class_mask, args):
         """
@@ -281,3 +273,12 @@ class Engine:
                 with open(checkpoint_path, 'wb') as f:
                     torch.save(checkpoint, f)
                 print(f"Saved checkpoint for task {task_id+1} at {checkpoint_path}")
+        
+        if args.ood_dataset:
+            print(f"{'OOD Evaluation':=^60}")
+            ood_start = time.time()
+            all_id_datasets = torch.utils.data.ConcatDataset([dl['val'].dataset for dl in data_loader])
+            ood_loader = data_loader[-1]['ood']
+            self.evaluate_ood(model, all_id_datasets, ood_loader, device, args)
+            ood_duration = time.time() - ood_start
+            print(f"OOD evaluation completed in {str(datetime.timedelta(seconds=int(ood_duration)))}")
