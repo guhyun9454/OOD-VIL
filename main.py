@@ -116,7 +116,7 @@ if __name__ == '__main__':
     parser.add_argument('--epochs', default=5, type=int)
 
     # Model parameters
-    parser.add_argument('--method', default='ICON',choices=['FT','ICON'], type=str, help='Engine type to use (e.g., ICON, FT)')
+    parser.add_argument('--method', default='ICON', type=str, help='Engine type to use (e.g., ICON, FT)')
     parser.add_argument('--model', default=None, type=str, metavar='MODEL', help='Name of model to train')
     parser.add_argument('--pretrained', default=True, help='Load pretrained model or not')
 

@@ -72,8 +72,8 @@ class Engine():
         self.device=device
         
         if self.args.d_threshold:
-            self.acc_per_label = np.zeros((self.args.class_num, self.args.domain_num))
-            self.label_train_count = np.zeros((self.args.class_num))
+            self.acc_per_label = np.zeros((self.args.num_classes, self.args.num_domains))
+            self.label_train_count = np.zeros((self.args.num_classes))
             self.tanh = torch.nn.Tanh()
             
         self.cs=torch.nn.CosineSimilarity(dim=1,eps=1e-6)

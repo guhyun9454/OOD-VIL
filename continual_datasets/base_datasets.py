@@ -750,9 +750,9 @@ class CLEAR(torch.utils.data.Dataset):
         self.fpath = dst
         
         if self.mode not in ['cil', 'joint']:
-            if self.mode == 'dil': args.domain_num = 11
-            elif self.mode == 'vil': args.domain_num = 5
-            domain_list = [str(i) for i in range(0,args.domain_num)]
+            if self.mode == 'dil': args.num_domains = 11
+            elif self.mode == 'vil': args.num_domains = 5
+            domain_list = [str(i) for i in range(0,args.num_domains)]
             self.data = [datasets.ImageFolder(os.path.join(self.fpath, d), transform=transform) for d in domain_list]
         else:
             self.data = datasets.ImageFolder(self.fpath, transform=transform)
@@ -774,10 +774,10 @@ class CLEAR(torch.utils.data.Dataset):
             # 도메인 "1"부터 "10"을 2개씩 묶어서 5개의 그룹으로 만듦
             if self.mode == 'vil':
                 groups = [["1", "2"], ["3", "4"], ["5", "6"], ["7", "8"], ["9", "10"]]
-                self.args.domain_num = 5
+                self.args.num_domains = 5
             elif self.mode == 'dil':
                 groups = [[str(i)] for i in range(0,11)]
-                self.args.domain_num = 11
+                self.args.num_domains = 11
             for i, group in tqdm.tqdm(enumerate(groups, start=0), desc='Preprocessing'):
                 new_domain = str(i)
                 new_domain_path = os.path.join(dst, new_domain)

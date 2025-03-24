@@ -100,23 +100,23 @@ def get_ood_dataset(dataset_name, args):
     if args.verbose:
         print(f"Loading OOD dataset: {dataset_name}")
     dataset = get_dataset(dataset_name, transform_train=build_transform(True,args), transform_val=build_transform(False,args), mode='joint', args=args)[0]
-    ood_dataset = UnknownWrapper(dataset, args.class_num)
+    ood_dataset = UnknownWrapper(dataset, args.num_classes)
     return ood_dataset
 
 def set_data_config(args):
     if args.dataset == "iDigits":
-        args.class_num = 10
-        args.domain_num = 4
+        args.num_classes = 10
+        args.num_domains = 4
         args.id_datasets = ['MNIST', 'SVHN', 'MNISTM', 'SynDigit']
     elif args.dataset == "DomainNet":
-        args.class_num = 345
-        args.domain_num = 6
+        args.num_classes = 345
+        args.num_domains = 6
     elif args.dataset == "CORe50":
-        args.class_num = 50
-        args.domain_num = 8
+        args.num_classes = 50
+        args.num_domains = 8
     elif args.dataset == "CLEAR":
-        args.class_num = 100
-        args.domain_num = 5
+        args.num_classes = 100
+        args.num_domains = 5
     else:
         raise ValueError(f"Unknown dataset: {args.dataset}")
     return args

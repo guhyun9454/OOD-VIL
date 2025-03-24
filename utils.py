@@ -29,7 +29,7 @@ def save_confusion_matrix_plot(confusion_matrix, labels, args):
     save_path = os.path.join(args.save, 'confusion_matrix.png')
     plt.figure(figsize=(16,12))
     sns.heatmap(confusion_matrix,
-                annot=True,
+                annot=False,
                 fmt='d',
                 cmap='Blues',
                 xticklabels=modified_labels,
