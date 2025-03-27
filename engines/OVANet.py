@@ -11,15 +11,14 @@ import torchvision.transforms as transforms
 from torch.utils.data import DataLoader, ConcatDataset
 from utils import seed_everything
 from sklearn.metrics import confusion_matrix
-
-import continual_datasets.continual_datasets as cd
+import continual_datasets.base_datasets as cd
 from continual_datasets.dataset_utils import UnknownWrapper, RandomSampleWrapper
 
 class OVANet(nn.Module):
     def __init__(self, num_known=10, model_name='vit_base_patch16_224'):
         super(OVANet, self).__init__()
         self.num_known = num_known
-        self.vit = timm.create_model(model_name, pretrained=True)
+        self.vit = timm.create_model(model_name, pretrained=True)       
         #분류기 제거
         if hasattr(self.vit, 'head'):
             in_features = self.vit.head.in_features
@@ -69,7 +68,8 @@ def compute_ova_loss(out_open, labels, num_known):
     neg_loss = -torch.log(p_open[:, 0, :] + 1e-8)
     neg_loss = neg_loss * (1 - one_hot)
     neg_loss, _ = neg_loss.max(dim=1)
-    return pos_loss.mean(), neg_loss.mean()
+    ova_loss = 0.5 * (pos_loss.mean() + neg_loss.mean())
+    return ova_loss
 
 def train_ovanet(model, train_loader, optimizer, device, epochs=3, log_interval=50, num_known=10):
     model.train()
@@ -81,8 +81,7 @@ def train_ovanet(model, train_loader, optimizer, device, epochs=3, log_interval=
             images, labels = images.to(device), labels.to(device)
             _, out_closed, out_open = model(images)
             loss_ce = ce_loss_fn(out_closed, labels)
-            pos_loss, neg_loss = compute_ova_loss(out_open, labels, num_known)
-            ova_loss = 0.5 * (pos_loss + neg_loss)
+            ova_loss = compute_ova_loss(out_open, labels, num_known)
             loss = loss_ce + ova_loss
 
             optimizer.zero_grad()

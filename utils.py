@@ -19,6 +19,56 @@ import datetime
 import numpy as np
 import random
 import torch
+import matplotlib.pyplot as plt
+import os
+import seaborn as sns
+
+def save_confusion_matrix_plot(confusion_matrix, labels, args):
+    modified_labels = labels.copy()
+    modified_labels[-1] = 'ood'
+    save_path = os.path.join(args.save, 'confusion_matrix.png')
+    plt.figure(figsize=(16,12))
+    sns.heatmap(confusion_matrix,
+                annot=False,
+                fmt='d',
+                cmap='Blues',
+                xticklabels=modified_labels,
+                yticklabels=modified_labels)
+    plt.xlabel('Predicted Label')
+    plt.ylabel('True Label')
+    plt.title('Confusion Matrix')
+    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    print(f"Confusion matrix saved to {save_path}")
+
+def save_anomaly_histogram(id_scores, ood_scores, args):
+    save_path = os.path.join(args.save, "ood_histogram.png")
+    plt.figure(figsize=(16,12))
+    plt.hist(id_scores, bins=30, color='red', alpha=0.6, label='Known (ID) samples')
+    plt.hist(ood_scores, bins=30, color='blue', alpha=0.6, label='Unknown (OOD) samples')
+    plt.axvline(x=args.ood_threshold, color='blue', linestyle='dotted', linewidth=2, label='Threshold')
+    plt.title("Anomaly Score Histogram")
+    plt.xlabel("Anomaly Score (1 - max_softmax)")
+    plt.ylabel("Frequency")
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(save_path)
+    plt.close()
+    print(f"Histogram saved to {save_path}")
+
+def save_accuracy_heatmap(mat, task_id, args):
+    save_path = os.path.join(args.save, f"accuracy_matrix_task{task_id+1}.png")
+    plt.figure(figsize=(16,12))
+    im = plt.imshow(mat, interpolation='nearest', cmap="Reds", vmin=0, vmax=100)
+    plt.xlabel("Trained up to Task")
+    plt.ylabel("Evaluated Task")
+    plt.colorbar(im, label="Accuracy")
+    plt.xticks(np.arange(mat.shape[1]))
+    plt.yticks(np.arange(mat.shape[0]))
+    plt.tight_layout()
+    plt.savefig(save_path)
+    plt.close()
+    print(f"Accuracy heatmap saved to {save_path}")
+
 import torch.distributed as dist
 
 class SmoothedValue(object):

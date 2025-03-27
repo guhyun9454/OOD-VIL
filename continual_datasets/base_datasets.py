@@ -1,34 +1,26 @@
 import os
-import os.path
-
-import pathlib
-from pathlib import Path
-
-from typing import Any, Tuple
-
+import shutil
 import glob
+import string
+import zipfile
+from pathlib import Path
 from shutil import move, rmtree
+from typing import Any, Tuple, Union
 
 import numpy as np
-
 import torch
-import torch.utils
-import torch.utils.data
-from torchvision import datasets
-from torchvision.datasets.utils import download_url, check_integrity, verify_str_arg, download_and_extract_archive, extract_archive
-
-import PIL
 from PIL import Image
+from torchvision import datasets
+from torchvision.datasets.mnist import read_image_file, read_label_file
 
+from torchvision.datasets.utils import (
+    download_url,
+    check_integrity,
+    verify_str_arg,
+    download_and_extract_archive,
+    extract_archive
+)
 import tqdm
-import zipfile
-import tarfile
-
-from .dataset_utils import read_image_file, read_label_file
-
-import string
-import shutil
-from typing import Any, Tuple, Union
 
 class MNIST_RGB(datasets.MNIST):
 
@@ -48,30 +40,6 @@ class MNIST_RGB(datasets.MNIST):
 
         self.data, self.targets = self._load_data()
         self.classes = [i for i in range(10)]
-
-    def _check_legacy_exist(self):
-        processed_folder_exists = os.path.exists(self.processed_folder)
-        if not processed_folder_exists:
-            return False
-
-        return all(
-            check_integrity(os.path.join(self.processed_folder, file)) for file in (self.training_file, self.test_file)
-        )
-
-    def _load_legacy_data(self):
-        # This is for BC only. We no longer cache the data in a custom binary, but simply read from the raw data
-        # directly.
-        data_file = self.training_file if self.train else self.test_file
-        return torch.load(os.path.join(self.processed_folder, data_file))
-
-    def _load_data(self):
-        image_file = f"{'train' if self.train else 't10k'}-images-idx3-ubyte"
-        data = read_image_file(os.path.join(self.raw_folder, image_file))
-
-        label_file = f"{'train' if self.train else 't10k'}-labels-idx1-ubyte"
-        targets = read_label_file(os.path.join(self.raw_folder, label_file))
-
-        return data, targets
 
     def __getitem__(self, index: int) -> Tuple[Any, Any]:
         """
@@ -407,35 +375,34 @@ class EMNIST(datasets.MNIST):
                 extract_archive(os.path.join(gzip_folder, gzip_file), self.raw_folder)
         shutil.rmtree(gzip_folder)
 
-    
 class EMNIST_RGB(EMNIST):
     def __init__(self, root, split='letters', train=True, transform=None, target_transform=None, download=False,
-                 random_seed=42, num_random_classes=10):
+                 random_seed=42, num_random_classes=26):
         super(EMNIST_RGB, self).__init__(root, split=split, train=train, transform=transform,
                                          target_transform=target_transform, download=download)
-        # # letters split인 경우 "N/A" (target 0)를 제외한 알파벳(a~z)이 target 1~26로 매핑됨.
-        # # num_random_classes가 지정되면, valid target (1~26) 중에서 랜덤으로 선택하여 필터링합니다.
-        # if split == 'letters' and num_random_classes is not None:
-        #     valid_letters = list(string.ascii_lowercase)  # ['a', 'b', ... 'z']
-        #     valid_targets = np.arange(1, 27)  # 1 ~ 26
-        #     if random_seed is not None:
-        #         np.random.seed(random_seed)
-        #     # 랜덤으로 num_random_classes 개를 샘플링 (중복 없이)
-        #     sampled = np.random.choice(valid_targets, size=num_random_classes, replace=False)
-        #     sampled = np.sort(sampled)  # 정렬해서 매핑 순서를 일정하게 유지
-        #     # self.targets는 torch.Tensor임 (타입: torch.long)
-        #     target_np = self.targets.numpy()
-        #     valid_mask = np.isin(target_np, sampled)
-        #     self.data = self.data[valid_mask]
-        #     self.targets = self.targets[valid_mask]
-        #     # 기존 target 값을 0~(num_random_classes-1)로 remap
-        #     mapping = {old: new for new, old in enumerate(sampled)}
-        #     new_targets = [mapping[x.item()] for x in self.targets]
-        #     self.targets = torch.tensor(new_targets, dtype=torch.long)
-        #     # 클래스 이름 업데이트 (예: target 1 -> 'a', target 3 -> 'c' 등)
-        #     self.classes = [valid_letters[t - 1] for t in sorted(sampled)]
-        # else:
-        #     raise ValueError("split='letters' and num_random_classes must be specified together.")
+        # letters split인 경우 "N/A" (target 0)를 제외한 알파벳(a~z)이 target 1~26로 매핑됨.
+        # num_random_classes가 지정되면, valid target (1~26) 중에서 랜덤으로 선택하여 필터링합니다.
+        if split == 'letters' and num_random_classes is not None:
+            valid_letters = list(string.ascii_lowercase)  # ['a', 'b', ... 'z']
+            valid_targets = np.arange(1, 27)  # 1 ~ 26
+            if random_seed is not None:
+                np.random.seed(random_seed)
+            # 랜덤으로 num_random_classes 개를 샘플링 (중복 없이)
+            sampled = np.random.choice(valid_targets, size=num_random_classes, replace=False)
+            sampled = np.sort(sampled)  # 정렬해서 매핑 순서를 일정하게 유지
+            # self.targets는 torch.Tensor임 (타입: torch.long)
+            target_np = self.targets.numpy()
+            valid_mask = np.isin(target_np, sampled)
+            self.data = self.data[valid_mask]
+            self.targets = self.targets[valid_mask]
+            # 기존 target 값을 0~(num_random_classes-1)로 remap
+            mapping = {old: new for new, old in enumerate(sampled)}
+            new_targets = [mapping[x.item()] for x in self.targets]
+            self.targets = torch.tensor(new_targets, dtype=torch.long)
+            # 클래스 이름 업데이트 (예: target 1 -> 'a', target 3 -> 'c' 등)
+            self.classes = [valid_letters[t - 1] for t in sorted(sampled)]
+        else:
+            raise ValueError("split='letters' and num_random_classes must be specified together.")
 
     def __getitem__(self, index):
         img, target = self.data[index], int(self.targets[index])
@@ -469,111 +436,108 @@ class FashionMNIST_RGB(datasets.FashionMNIST):
             target = self.target_transform(target)
         return img, target
 
-
 class CORe50(torch.utils.data.Dataset):
-    def __init__(self, root, train=True, transform=None, target_transform=None, download=False, mode='cil'):        
-        self.root = os.path.expanduser(root)
-        self.transform = transform
-        self.target_transform=target_transform
+    def __init__(self, root, train=True, transform=None, target_transform=None, download=False, mode='cil'):
+        # CORe50 데이터셋은 root/CORe50 폴더 아래에 저장됩니다.
+        self.root = os.path.join(os.path.expanduser(root), 'CORe50')
         self.train = train
+        self.transform = transform
+        self.target_transform = target_transform
         self.mode = mode
 
         self.url = 'http://bias.csr.unibo.it/maltoni/download/core50/core50_128x128.zip'
         self.filename = 'core50_128x128.zip'
+        self.extract_folder = os.path.join(self.root, 'core50_128x128')
 
-        # self.fpath = os.path.join(root, 'VIL_CORe50')
-        self.fpath = os.path.join(root, 'core50_128x128')
-        
-        if not os.path.isfile(self.fpath):
-            if not download:
-               raise RuntimeError('Dataset not found. You can use download=True to download it')
-            else:
-                print('Downloading from '+self.url)
-                download_url(self.url, root, filename=self.filename)
 
-        if not os.path.exists(os.path.join(root, 'core50_128x128')):
-            with zipfile.ZipFile(os.path.join(self.root, self.filename), 'r') as zf:
-                for member in tqdm.tqdm(zf.infolist(), desc=f'Extracting {self.filename}'):
-                    try:
-                        zf.extract(member, root)
-                    except zipfile.error as e:
-                        pass
-
-        self.train_session_list = ['s1', 's2', 's4', 's5', 's6', 's8', 's9', 's11']
-        self.test_session_list = ['s3', 's7', 's10']
-        self.label = [f'o{i}' for i in range(1, 51)]
-        
-        if not os.path.exists(self.fpath + '/train') and not os.path.exists(self.fpath + '/test'):
-            self.split()
 
         if self.train:
-            fpath = self.fpath + '/train'
-            if self.mode not in ['cil', 'joint']:
-                self.data = [datasets.ImageFolder(f'{fpath}/{s}', transform=transform) for s in self.train_session_list]
-            else:
-                self.data = datasets.ImageFolder(fpath, transform=transform)
+            self.dst = os.path.join(self.root, f"train_{mode}")
         else:
-            fpath = self.fpath + '/test'
-            self.data = datasets.ImageFolder(fpath, transform=transform)
+            self.dst = os.path.join(self.root, f"test_{mode}")
 
-    def split(self):
-        train_folder = self.fpath + '/train'
-        test_folder = self.fpath + '/test'
-
-        if os.path.exists(train_folder):
-            rmtree(train_folder)
-        if os.path.exists(test_folder):
-            rmtree(test_folder)
-        os.mkdir(train_folder)
-        os.mkdir(test_folder)
-
-        if self.mode not in ['cil', 'joint']:
-            for s in tqdm.tqdm(self.train_session_list, desc='Preprocessing'):
-                src = os.path.join(self.fpath, s)
-                if os.path.exists(os.path.join(train_folder, s)):
-                    continue
-                move(src, train_folder)
+        # 목적 폴더가 없으면 split()을 통해 재구성합니다.
+        if not os.path.exists(self.dst):
+            if not os.path.exists(self.extract_folder):
+                if not download:
+                    raise RuntimeError('Dataset not found. You can use download=True to download it')
+                else:
+                    print('Downloading from ' + self.url)
+                    download_url(self.url, self.root, filename=self.filename)
+                    with zipfile.ZipFile(os.path.join(self.root, self.filename), 'r') as zf:
+                        for member in tqdm.tqdm(zf.infolist(), desc=f'Extracting {self.filename}'):
+                            try:
+                                zf.extract(member, self.root)
+                            except zipfile.error as e:
+                                pass
+            self.split(self.extract_folder, self.dst)
+            rmtree(self.extract_folder)
             
-            for s in tqdm.tqdm(self.test_session_list, desc='Preprocessing'):
-                for l in self.label:
-                    dst = os.path.join(test_folder, l)
-                    if not os.path.exists(dst):
-                        os.mkdir(os.path.join(test_folder, l))
-                    
-                    f = glob.glob(os.path.join(self.fpath, s, l, '*.png'))
-
-                    for src in f:
-                        move(src, dst)
-                rmtree(os.path.join(self.fpath, s))
+        if self.train:
+            if self.mode not in ['cil', 'joint']:
+                self.data = [datasets.ImageFolder(os.path.join(self.dst, s), transform=transform)
+                             for s in self.get_train_sessions()]
+            else:
+                self.data = datasets.ImageFolder(self.dst, transform=transform)
         else:
-            for s in tqdm.tqdm(self.train_session_list, desc='Preprocessing'):
-                for l in self.label:
-                    dst = os.path.join(train_folder, l)
-                    if not os.path.exists(dst):
-                        os.mkdir(os.path.join(train_folder, l))
-                    
-                    f = glob.glob(os.path.join(self.fpath, s, l, '*.png'))
+            self.data = datasets.ImageFolder(self.dst, transform=transform)
 
-                    for src in f:
-                        move(src, dst)
-                rmtree(os.path.join(self.fpath, s))
+    def get_train_sessions(self):
+        return ['s1', 's2', 's4', 's5', 's6', 's8', 's9', 's11']
 
-            for s in tqdm.tqdm(self.test_session_list, desc='Preprocessing'):
-                for l in self.label:
-                    dst = os.path.join(test_folder, l)
-                    if not os.path.exists(dst):
-                        os.mkdir(os.path.join(test_folder, l))
-                    
-                    f = glob.glob(os.path.join(self.fpath, s, l, '*.png'))
+    def get_test_sessions(self):
+        return ['s3', 's7', 's10']
 
-                    for src in f:
-                        move(src, dst)
-                rmtree(os.path.join(self.fpath, s))
+    def get_labels(self):
+        return [f'o{i}' for i in range(1, 51)]
+
+    def split(self, src, dst):
+        """
+        src: 압축 해제된 원본 폴더 (예: .../CORe50/core50_128x128)
+        dst: 최종적으로 구성할 폴더 (예: .../CORe50/train_cil, test_dil 등)
+        mode에 따라 두 가지 방식으로 데이터를 재구성
+        """
+        os.makedirs(dst, exist_ok=True)
+        if self.train:
+            # 학습 데이터 재구성
+            if self.mode not in ['cil', 'joint']:
+                # 각 세션 폴더(s1, s2, ... 등)를 dst로 이동
+                for s in tqdm.tqdm(self.get_train_sessions(), desc='Preprocessing Training'):
+                    src_folder = os.path.join(src, s)
+                    if os.path.exists(src_folder):
+                        move(src_folder, dst)
+            else:
+                # cil 또는 joint 모드: 모든 세션의 데이터를 클래스별로 통합
+                labels = self.get_labels()
+                for label in labels:
+                    os.makedirs(os.path.join(dst, label), exist_ok=True)
+                for s in tqdm.tqdm(self.get_train_sessions(), desc='Preprocessing Training'):
+                    session_folder = os.path.join(src, s)
+                    if os.path.exists(session_folder):
+                        for label in labels:
+                            pattern = os.path.join(session_folder, label, '*.png')
+                            files = glob.glob(pattern)
+                            for file in files:
+                                move(file, os.path.join(dst, label))
+                        rmtree(session_folder)
+        else:
+            # 테스트 데이터 재구성: 모든 세션 데이터를 클래스별로 통합
+            labels = self.get_labels()
+            for label in labels:
+                os.makedirs(os.path.join(dst, label), exist_ok=True)
+            for s in tqdm.tqdm(self.get_test_sessions(), desc='Preprocessing Testing'):
+                session_folder = os.path.join(src, s)
+                if os.path.exists(session_folder):
+                    for label in labels:
+                        pattern = os.path.join(session_folder, label, '*.png')
+                        files = glob.glob(pattern)
+                        for file in files:
+                            move(file, os.path.join(dst, label))
+                    rmtree(session_folder)
 
 class DomainNet(torch.utils.data.Dataset):
     def __init__(self, root, train=True, transform=None, target_transform=None, download=False, mode='cil'):
-        root = os.path.join(root, 'VIL_DomainNet')   
-        # root = os.path.join(root, 'DomainNet')   
+        root = os.path.join(root, 'DomainNet')   
         self.root = os.path.expanduser(root)
         self.transform = transform
         self.target_transform=target_transform
@@ -752,3 +716,136 @@ class DomainNet(torch.utils.data.Dataset):
 
                         move(src, dst)
                 rmtree(os.path.join(self.root, test_list.split('_')[0]))
+
+class CLEAR(torch.utils.data.Dataset):
+    train_url = "https://huggingface.co/datasets/elvishelvis6/CLEAR-Continual_Learning_Benchmark/resolve/main/clear100-train-image-only.zip"
+    test_url  = "https://huggingface.co/datasets/elvishelvis6/CLEAR-Continual_Learning_Benchmark/resolve/main/clear100-test.zip"
+    train_filename = "clear100-train-image-only.zip"
+    test_filename  = "clear100-test.zip"
+    
+    def __init__(self, root, train=True, transform=None, target_transform=None, download=False, mode=None, args = None):
+        root = os.path.join(root, 'CLEAR_100')
+        self.root = os.path.expanduser(root)
+        self.train = train
+        self.transform = transform
+        self.target_transform = target_transform
+        self.mode = mode
+        self.args = args
+
+        if self.train:
+            src = os.path.join(self.root, "train_image_only", "labeled_images")
+            dst = os.path.join(self.root, f"train_{mode}")
+        else:
+            src = os.path.join(self.root, "test",  "labeled_images")
+            dst = os.path.join(self.root, f"test_{mode}")
+                
+        if not os.path.exists(dst):
+            if download:
+                self.download()
+            self.split(src, dst)
+            if self.train:
+                rmtree(os.path.join(self.root, "train_image_only"))
+            else:
+                rmtree(os.path.join(self.root, "test"))
+        self.fpath = dst
+        
+        if self.mode not in ['cil', 'joint']:
+            if self.mode == 'dil': args.num_domains = 11
+            elif self.mode == 'vil': args.num_domains = 5
+            domain_list = [str(i) for i in range(0,args.num_domains)]
+            self.data = [datasets.ImageFolder(os.path.join(self.fpath, d), transform=transform) for d in domain_list]
+        else:
+            self.data = datasets.ImageFolder(self.fpath, transform=transform)
+    
+    def split(self, src, dst):
+        """
+        src: 원본 데이터가 있는 폴더 (예: .../labeled_images)
+        dst: 최종 train 또는 test 폴더 (예: .../OODVIL_train 또는 .../OODVIL_test)
+        
+        mode에 따라 두 가지로 동작:
+        1) mode not in ['cil','joint']: 도메인별로 폴더를 그대로 옮기는데, 
+            여기서는 도메인 "1"~"10"을 2개씩 묶어 5개의 도메인으로 재구성.
+        2) mode in ['cil','joint']: 모든 도메인의 데이터를 클래스별로 합쳐 단일 폴더 구조로 재구성.
+        """
+
+        os.mkdir(dst)
+        
+        if self.mode not in ['cil', 'joint']:
+            # 도메인 "1"부터 "10"을 2개씩 묶어서 5개의 그룹으로 만듦
+            if self.mode == 'vil':
+                groups = [["1", "2"], ["3", "4"], ["5", "6"], ["7", "8"], ["9", "10"]]
+                self.args.num_domains = 5
+            elif self.mode == 'dil':
+                groups = [[str(i)] for i in range(0,11)]
+                self.args.num_domains = 11
+            for i, group in tqdm.tqdm(enumerate(groups, start=0), desc='Preprocessing'):
+                new_domain = str(i)
+                new_domain_path = os.path.join(dst, new_domain)
+                os.mkdir(new_domain_path)
+                for d in group:
+                    src_d = os.path.join(src, d)
+                    if not os.path.exists(src_d):
+                        print(f"Warning: 도메인 폴더 {src_d}가 존재하지 않습니다.")
+                        continue
+                    for class_name in os.listdir(src_d):
+                        class_src = os.path.join(src_d, class_name)
+                        if os.path.isdir(class_src):
+                            class_dst = os.path.join(new_domain_path, class_name)
+                            if not os.path.exists(class_dst):
+                                os.mkdir(class_dst)
+                            for ext in ['*.png', '*.jpg']:
+                                files = glob.glob(os.path.join(class_src, ext))
+                                for f in files:
+                                    move(f, class_dst)
+                            rmtree(class_src)
+                for d in group:
+                    src_d = os.path.join(src, d)
+                    if os.path.exists(src_d):
+                        rmtree(src_d)
+        else:
+            domain_list = sorted([d for d in os.listdir(src) if os.path.isdir(os.path.join(src, d))])
+            sample_domain = os.path.join(src, domain_list[0])
+            class_names = sorted([c for c in os.listdir(sample_domain) if os.path.isdir(os.path.join(sample_domain, c))])
+            for c in class_names:
+                os.mkdir(os.path.join(dst, c))
+            exts = ['*.png', '*.jpg']
+            for d in tqdm.tqdm(domain_list,desc='Preprocessing'):
+                domain_path = os.path.join(src, d)
+                for c in os.listdir(domain_path):
+                    class_path = os.path.join(domain_path, c)
+                    if os.path.isdir(class_path):
+                        files = []
+                        for ext in exts:
+                            files.extend(glob.glob(os.path.join(class_path, ext)))
+                        for f in files:
+                            move(f, os.path.join(dst, c))
+                rmtree(domain_path)
+    
+    def download(self):
+        os.makedirs(self.root, exist_ok=True)
+        if self.train:
+            train_zip = os.path.join(self.root, self.train_filename)
+            if not os.path.exists(train_zip):
+                print(f"Downloading train data from {self.train_url} ...")
+                download_url(self.train_url, self.root, self.train_filename)
+            else:
+                print(f"Train zip file {train_zip} already exists.")
+            train_extract_dir = os.path.join(self.root, "train_image_only")
+            if not os.path.exists(train_extract_dir):
+                print(f"Extracting {train_zip} ...")
+                extract_archive(train_zip, self.root)
+            else:
+                print(f"Train extract directory {train_extract_dir} already exists.")
+        else:
+            test_zip  = os.path.join(self.root, self.test_filename)
+            if not os.path.exists(test_zip):
+                print(f"Downloading test data from {self.test_url} ...")
+                download_url(self.test_url, self.root, self.test_filename)
+            else:
+                print(f"Test zip file {test_zip} already exists.")   
+            test_extract_dir = os.path.join(self.root, "test")
+            if not os.path.exists(test_extract_dir):
+                print(f"Extracting {test_zip} ...")
+                extract_archive(test_zip, self.root)
+            else:
+                print(f"Test extract directory {test_extract_dir} already exists.")
