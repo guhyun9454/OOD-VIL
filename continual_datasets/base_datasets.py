@@ -537,7 +537,7 @@ class CORe50(torch.utils.data.Dataset):
 
 class DomainNet(torch.utils.data.Dataset):
     def __init__(self, root, train=True, transform=None, target_transform=None, download=False, mode='cil'):
-        root = os.path.join(root, 'DomainNet')   
+        root = os.path.join(root, 'DomainNet_OODVIL')   
         self.root = os.path.expanduser(root)
         self.transform = transform
         self.target_transform=target_transform
