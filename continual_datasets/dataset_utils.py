@@ -12,6 +12,8 @@ import torch
 from torch.utils.model_zoo import tqdm
 from torchvision import transforms
 from continual_datasets.base_datasets import *
+from torch.utils.data import ConcatDataset
+
 
 def get_dataset(dataset, transform_train, transform_val, mode, args):
     if dataset == 'MNIST':
@@ -37,6 +39,15 @@ def get_dataset(dataset, transform_train, transform_val, mode, args):
     elif dataset == 'EMNIST':
         dataset_train = EMNIST_RGB(args.data_path, train=True, download=True, transform=transform_train, num_random_classes=10, split='letters')
         dataset_val = EMNIST_RGB(args.data_path, train=False, download=True, transform=transform_val, num_random_classes=10, split='letters')
+
+    elif dataset == 'iDigits':
+        mnist_train, mnist_val = get_dataset('MNIST', transform_train, transform_val, mode, args)
+        svhn_train, svhn_val = get_dataset('SVHN', transform_train, transform_val, mode, args)
+        syndigit_train, syndigit_val = get_dataset('SynDigit', transform_train, transform_val, mode, args)
+        mnistm_train, mnistm_val = get_dataset('MNISTM', transform_train, transform_val, mode, args)
+
+        dataset_train = ConcatDataset([mnist_train, svhn_train, syndigit_train, mnistm_train])
+        dataset_val = ConcatDataset([mnist_val, svhn_val, syndigit_val, mnistm_val])
 
     elif dataset == 'CORe50':
         dataset_train = CORe50(args.data_path, train=True, download=True, transform=transform_train, mode=mode).data
