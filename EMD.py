@@ -7,6 +7,7 @@ from continual_datasets.dataset_utils import get_dataset, build_transform
 import argparse
 from tqdm import tqdm
 import timm
+from itertools import combinations
 
 def compute_prototype_arrays(features, labels):
     unique_labels = np.unique(labels)
@@ -39,14 +40,12 @@ def compute_domain_similarity(features_A, labels_A, features_B, labels_B, alpha=
     return domain_similarity, emd_value
 
 def extract_features_clip(dataset, batch_size=32, device="cuda"):
-
     model, _ = clip.load("ViT-B/32", device=device)
     model.eval()
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
     features = []
     labels = []
     
-    model.eval()  
     with torch.no_grad():
         for imgs, lbls in tqdm(dataloader):
             imgs = imgs.to(device)
@@ -74,49 +73,40 @@ def extract_features_vit(dataset, batch_size=32, device="cuda"):
     labels = np.array(labels)
     return features, labels
 
-
-def process_two_datasets(dataset1_name, dataset2_name, args):
+def process_all_datasets(dataset_names, args):
     # 데이터 전처리 transform 구성
     transform_train = build_transform(is_train=True, args=args)
     transform_val = build_transform(is_train=False, args=args)
     mode = "joint"  # joint 모드
-
-    # 각 데이터셋 로드 (여기서는 validation 데이터 사용)
-    print(f"데이터셋 '{dataset1_name}' 로드 중...")
-    ds1_train, ds1_val = get_dataset(dataset1_name, transform_train, transform_val, mode, args)
-    print(f"데이터셋 '{dataset2_name}' 로드 중...")
-    ds2_train, ds2_val = get_dataset(dataset2_name, transform_train, transform_val, mode, args)
-    
-    dataset1 = ds1_val
-    dataset2 = ds2_val
-
-    print(f"'{dataset1_name}' 데이터셋 크기: {len(dataset1)}")
-    print(f"'{dataset2_name}' 데이터셋 크기: {len(dataset2)}")
-
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    # 특징 추출
-    print(f"'{dataset1_name}' 데이터셋 인코딩 시작...")
-    features1, labels1 = extract_features_vit(dataset1, batch_size=512, device=device)
-    print(f"'{dataset2_name}' 데이터셋 인코딩 시작...")
-    features2, labels2 = extract_features_vit(dataset2, batch_size=512, device=device)
-
-    print(f"'{dataset1_name}' 특징 shape: {features1.shape}")
-    print(f"'{dataset2_name}' 특징 shape: {features2.shape}")
-
-    # EMD 기반 도메인 유사도 계산
-    similarity, emd_value = compute_domain_similarity(features1, labels1, features2, labels2)
-    print("도메인 유사도:", similarity)
-    print("EMD 값:", emd_value)
+    # 각 데이터셋을 한 번만 인코딩해서 저장
+    dataset_features = {}
+    for name in dataset_names:
+        print(f"\n데이터셋 '{name}' 로드 중...")
+        ds_train, ds_val = get_dataset(name, transform_train, transform_val, mode, args)
+        dataset = ds_val  # validation 데이터 사용
+        print(f"'{name}' 데이터셋 크기: {len(dataset)}")
+        print(f"'{name}' 데이터셋 인코딩 시작...")
+        features, labels = extract_features_vit(dataset, batch_size=512, device=device)
+        print(f"'{name}' 특징 shape: {features.shape}")
+        dataset_features[name] = (features, labels)
+    
+    # 모든 데이터셋 쌍에 대해 도메인 유사도 계산
+    for dataset1, dataset2 in combinations(dataset_names, 2):
+        features1, labels1 = dataset_features[dataset1]
+        features2, labels2 = dataset_features[dataset2]
+        print(f"\n== {dataset1} vs {dataset2} ==")
+        similarity, emd_value = compute_domain_similarity(features1, labels1, features2, labels2)
+        print("도메인 유사도:", similarity)
+        print("EMD 값:", emd_value)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset1", type=str, default="MNIST", help="첫 번째 데이터셋 이름")
-    parser.add_argument("--dataset2", type=str, default="SVHN", help="두 번째 데이터셋 이름")
+    parser.add_argument("--dataset_list", type=str, default="iDigits,CORe50,DomainNet,CLEAR", help="콤마로 구분된 데이터셋 리스트")
     parser.add_argument("--data_path", type=str, default="/local_datasets/", help="데이터셋 경로")
     args = parser.parse_args()
     args.verbose = True
 
-    process_two_datasets(args.dataset1, args.dataset2, args)
-
-    
+    dataset_names = [name.strip() for name in args.dataset_list.split(",")]
+    process_all_datasets(dataset_names, args)
