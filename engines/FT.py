@@ -111,102 +111,139 @@ class Engine:
         return avg_acc
 
     def evaluate_ood(self, model, id_datasets, ood_dataset, device, args):
-        """
-        Revised OOD evaluation:
-        - Align ID and OOD datasets to the same number of samples.
-        - For each sample, compute softmax outputs and determine prediction: if max_softmax < 0.5, predict as unknown (args.unknown_class), otherwise use argmax.
-        - Combine predictions from ID and OOD data to build a (num_classes+1) x (num_classes+1) confusion matrix.
-        - Compute AUROC using binary labels (0 for ID, 1 for OOD) and ood scores (1 - max_softmax).
-        """
-
-        # Align datasets: use the smaller dataset size for both ID and OOD
+        model.eval()
+        
+        # OOD detection method 선택 (MSP, ENERGY, KL)
+        ood_method = args.ood_method.upper()
+        
+        def MSP(logits):
+            return F.softmax(logits, dim=1).max(dim=1)[0]
+        
+        def ENERGY(logits):
+            return torch.logsumexp(logits, dim=1)
+        
+        def KL(logits):
+            uniform = torch.ones_like(logits) / logits.shape[-1]
+            return F.cross_entropy(logits, uniform, reduction='none')
+        
+        if ood_method == "MSP":
+            infer_func = MSP
+        elif ood_method == "ENERGY":
+            infer_func = ENERGY
+        elif ood_method == "KL":
+            infer_func = KL
+        else:
+            raise ValueError(f"Unknown OOD detection method: {ood_method}")
+        
+        # 데이터셋 샘플 수 맞추기
         id_size = len(id_datasets)
         ood_size = len(ood_dataset)
         min_size = min(id_size, ood_size)
-        if args.verbose: print(f"ID dataset size: {id_size}, OOD dataset size: {ood_size}. Using {min_size} samples each for evaluation.")
-
-        # Use RandomSampleWrapper if dataset size is larger than min_size
-        if id_size > min_size:
-            id_dataset_aligned = RandomSampleWrapper(id_datasets, min_size, args.seed)
-        else:
-            id_dataset_aligned = id_datasets
-        if ood_size > min_size:
-            ood_dataset_aligned = RandomSampleWrapper(ood_dataset, min_size, args.seed)
-        else:
-            ood_dataset_aligned = ood_dataset
-
+        if args.develop:
+            min_size = 1000
+        if args.verbose:
+            print(f"ID dataset size: {id_size}, OOD dataset size: {ood_size}. Using {min_size} samples each for evaluation.")
+        
+        id_dataset_aligned = RandomSampleWrapper(id_datasets, min_size, args.seed) if id_size > min_size else id_datasets
+        ood_dataset_aligned = RandomSampleWrapper(ood_dataset, min_size, args.seed) if ood_size > min_size else ood_dataset
+        
         aligned_id_loader = torch.utils.data.DataLoader(id_dataset_aligned, batch_size=args.batch_size, shuffle=False, num_workers=4)
         aligned_ood_loader = torch.utils.data.DataLoader(ood_dataset_aligned, batch_size=args.batch_size, shuffle=False, num_workers=4)
-
-        all_true = []
-        all_pred = []
-        binary_labels = []  # 0 for ID, 1 for OOD
-        ood_scores_all = []  # 1 - max_softmax for each sample
-        id_true_list, id_pred_list = [], []
-        ood_true_list, ood_pred_list = [], []
-
-
-        model.eval()
+        
+        # raw anomaly score와 raw pred_class 저장 (thresholding은 나중에 수행)
+        id_anomaly_scores_list = []
+        id_pred_class_list = []
+        id_true_labels = []
+        
+        ood_anomaly_scores_list = []
+        ood_pred_class_list = []
+        ood_true_labels = []
+        
         with torch.no_grad():
-            # Process ID data
+            # ID 데이터 처리
             for inputs, targets in aligned_id_loader:
                 inputs = inputs.to(device)
-                outputs = model(inputs)
-                softmax_outputs = F.softmax(outputs, dim=1)
-                max_softmax, pred_class = torch.max(softmax_outputs, dim=1)
-                # If max_softmax is below 0.5, predict as unknown
-                pred = torch.where(max_softmax < args.ood_threshold, torch.full_like(pred_class, args.num_classes), pred_class)
-                all_true.extend(targets.cpu().numpy())
-                all_pred.extend(pred.cpu().numpy())
-                binary_labels.extend([0] * inputs.size(0))
-                ood_scores_all.extend((1 - max_softmax).cpu().numpy())
-                id_true_list.extend(targets.cpu().numpy())
-                id_pred_list.extend(pred.cpu().numpy())
-
-            # Process OOD data
-            for inputs, targets in aligned_ood_loader:
+                logits = model(inputs) # logit
+                scores = infer_func(logits)
+                id_anomaly_scores_list.append(scores)
+                
+                softmax_outputs = F.softmax(logits, dim=1)
+                pred_class = torch.max(softmax_outputs, dim=1)[1]
+                id_pred_class_list.append(pred_class)
+                id_true_labels.append(targets.to(device))
+            
+            # OOD 데이터 처리
+            for inputs, _ in aligned_ood_loader:
                 inputs = inputs.to(device)
-                outputs = model(inputs)
-                softmax_outputs = F.softmax(outputs, dim=1)
-                max_softmax, pred_class = torch.max(softmax_outputs, dim=1)
-                pred = torch.where(max_softmax < args.ood_threshold, torch.full_like(pred_class, args.num_classes), pred_class)
-                # For OOD, true label should be set to unknown_class
-                true_labels = torch.full_like(targets, fill_value=args.num_classes)
-                all_true.extend(true_labels.cpu().numpy())
-                all_pred.extend(pred.cpu().numpy())
-                binary_labels.extend([1] * inputs.size(0))
-                ood_scores_all.extend((1 - max_softmax).cpu().numpy())
-                ood_true_list.extend(true_labels.cpu().numpy())
-                ood_pred_list.extend(pred.cpu().numpy())
-
-        # Build confusion matrix: labels from 0 to (num_classes - 1) and unknown_class
-        labels = list(range(args.num_classes+1)) 
-        conf_matrix = confusion_matrix(all_true, all_pred, labels=labels)
-
-            # Compute ID and OOD accuracy separately
-        id_total = len(id_true_list)
-        ood_total = len(ood_true_list)
-        id_correct = sum(1 for t, p in zip(id_true_list, id_pred_list) if t == p)
-        ood_correct = sum(1 for t, p in zip(ood_true_list, ood_pred_list) if t == p)
-        acc_id = id_correct / id_total if id_total > 0 else 0.0
-        acc_ood = ood_correct / ood_total if ood_total > 0 else 0.0
-        h_score = 2 * acc_id * acc_ood / (acc_id + acc_ood) 
-
-        # Compute AUROC for OOD detection using binary labels and ood scores
-        try:
-            auroc = roc_auc_score(binary_labels, ood_scores_all)
-        except Exception as e:
-            print("AUROC computation error:", e)
-            auroc = 0.0
-        print(f"OOD Evaluation: AUROC: {auroc * 100:.2f}, A_id: {acc_id * 100:.2f}, A_ood: {acc_ood * 100:.2f}  H_score: {h_score * 100:.2f}")
-
+                logits = model(inputs)
+                scores = infer_func(logits)
+                ood_anomaly_scores_list.append(scores)
+                
+                softmax_outputs = F.softmax(logits, dim=1)
+                pred_class = torch.max(softmax_outputs, dim=1)[1]
+                ood_pred_class_list.append(pred_class)
+                true_labels = torch.full((logits.size(0),), fill_value=args.num_classes, dtype=torch.long).to(device)
+                ood_true_labels.append(true_labels)
+        
+        # 텐서로 합치기 및 정규화 (전역 min-max)
+        id_anomaly_scores = torch.cat(id_anomaly_scores_list, dim=0)
+        ood_anomaly_scores = torch.cat(ood_anomaly_scores_list, dim=0)
+        all_scores_tensor = torch.cat([id_anomaly_scores, ood_anomaly_scores], dim=0)
+        if args.normalize_ood_scores:
+            min_score = all_scores_tensor.min()
+            max_score = all_scores_tensor.max()
+            id_anomaly_scores_norm = (id_anomaly_scores - min_score) / (max_score - min_score)
+            ood_anomaly_scores_norm = (ood_anomaly_scores - min_score) / (max_score - min_score)
+        else:
+            id_anomaly_scores_norm = id_anomaly_scores
+            ood_anomaly_scores_norm = ood_anomaly_scores
+        
+        # anomaly score 히스토그램 저장 (verbose 모드)
         if args.verbose:
-            save_confusion_matrix_plot(conf_matrix, labels, args)
-            id_scores = [score for score, label in zip(ood_scores_all, binary_labels) if label == 0]
-            ood_scores = [score for score, label in zip(ood_scores_all, binary_labels) if label == 1]
-            save_anomaly_histogram(id_scores, ood_scores, args)
-
-        return conf_matrix, auroc
+            from utils import save_anomaly_histogram
+            save_anomaly_histogram(id_anomaly_scores_norm.cpu().numpy(), ood_anomaly_scores_norm.cpu().numpy(), args)
+        
+        # thresholding: 정규화된 anomaly score를 기준으로 판별
+        id_pred_class = torch.cat(id_pred_class_list, dim=0)
+        ood_pred_class = torch.cat(ood_pred_class_list, dim=0)
+        
+        id_preds = torch.where(id_anomaly_scores_norm < args.ood_threshold,
+                            torch.full_like(id_pred_class, args.num_classes),
+                            id_pred_class)
+        ood_preds = torch.where(ood_anomaly_scores_norm < args.ood_threshold,
+                                torch.full_like(ood_pred_class, args.num_classes),
+                                ood_pred_class)
+        
+        id_true = torch.cat(id_true_labels, dim=0)
+        ood_true = torch.cat(ood_true_labels, dim=0)
+        
+        acc_id = (id_preds == id_true).float().mean().item()
+        acc_ood = (ood_preds == ood_true).float().mean().item()
+        h_score = 2 * acc_id * acc_ood / (acc_id + acc_ood) if (acc_id + acc_ood) > 0 else 0.0
+        
+        # binary_labels: ID -> 1, OOD -> 0 (ROC 계산용)
+        binary_labels = np.concatenate([np.ones(id_anomaly_scores_norm.shape[0]),
+                                        np.zeros(ood_anomaly_scores_norm.shape[0])])
+        all_scores = torch.cat([id_anomaly_scores_norm, ood_anomaly_scores_norm], dim=0).cpu().numpy()
+        
+        # ROC 및 기타 지표 계산
+        from sklearn import metrics
+        fpr, tpr, _ = metrics.roc_curve(binary_labels, all_scores, drop_intermediate=False)
+        auroc = metrics.auc(fpr, tpr)
+        idx_tpr95 = np.abs(tpr - 0.95).argmin()
+        fpr_at_tpr95 = fpr[idx_tpr95]
+        dtacc = 0.5 * (tpr + 1 - fpr).max()
+        auprc_in = metrics.average_precision_score(y_true=binary_labels, y_score=all_scores)
+        auprc_out = metrics.average_precision_score(y_true=binary_labels, y_score=-all_scores, pos_label=0)
+        
+        print(f"[{ood_method}]: evaluating metrics...")
+        print(f"ID classification accuracy (A_id): {acc_id * 100:.2f}%")
+        print(f"OOD detection accuracy (A_ood): {acc_ood * 100:.2f}%")
+        print(f"Harmonic mean (H_score): {h_score * 100:.2f}%")
+        print(f"AUROC: {auroc * 100:.2f}%, FPR@TPR95: {fpr_at_tpr95 * 100:.2f}%, dtacc: {dtacc * 100:.2f}%")
+        print(f"AUPRC in: {auprc_in * 100:.2f}%, AUPRC out: {auprc_out * 100:.2f}%")
+        
+        return all_scores, binary_labels, acc_id
     
     def evaluate_till_now(self, model, data_loader, device, task_id, class_mask, acc_matrix, args):
         """

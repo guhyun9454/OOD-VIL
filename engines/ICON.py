@@ -488,22 +488,22 @@ class Engine():
         # OOD detection method 선택 (MSP, ENERGY, KL)
         ood_method = args.ood_method.upper()
         
-        def msp_ood_infer(logits):
+        def MSP(logits):
             return F.softmax(logits, dim=1).max(dim=1)[0]
 
-        def energy_ood_infer(logits):
+        def ENERGY(logits):
             return torch.logsumexp(logits, dim=1)
         
-        def kl_ood_infer(logits):
+        def KL(logits):
             uniform = torch.ones_like(logits) / logits.shape[-1]
             return F.cross_entropy(logits, uniform, reduction='none')
         
         if ood_method == "MSP":
-            infer_func = msp_ood_infer
+            infer_func = MSP
         elif ood_method == "ENERGY":
-            infer_func = energy_ood_infer
+            infer_func = ENERGY
         elif ood_method == "KL":
-            infer_func = kl_ood_infer
+            infer_func = KL
         else:
             raise ValueError(f"Unknown OOD detection method: {ood_method}")
         
@@ -601,9 +601,10 @@ class Engine():
         acc_ood = (ood_preds == ood_true).float().mean().item()
         h_score = 2 * acc_id * acc_ood / (acc_id + acc_ood) if (acc_id + acc_ood) > 0 else 0.0
         
-        # binary_labels: ID -> 0, OOD -> 1 (ROC 계산용)
-        binary_labels = np.concatenate([np.zeros(id_anomaly_scores_norm.shape[0]),
-                                        np.ones(ood_anomaly_scores_norm.shape[0])])
+        # labels: 0 = OOD, 1 = ID
+        # scores: it is anomality score (the higher the score, the more anomalous)
+        binary_labels = np.concatenate([np.ones(id_anomaly_scores_norm.shape[0]),
+                                        np.zeros(ood_anomaly_scores_norm.shape[0])])
         # 전체 normalized anomaly score 결합 (numpy array)
         all_scores = torch.cat([id_anomaly_scores_norm, ood_anomaly_scores_norm], dim=0).cpu().numpy()
         
