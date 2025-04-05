@@ -445,6 +445,13 @@ class CORe50(torch.utils.data.Dataset):
         self.target_transform = target_transform
         self.mode = mode
 
+        if mode in ['cil', 'joint']:
+            self.folder_type = 'domain_merged'
+        elif mode in ['dil','vil']:
+            self.folder_type = 'domain_separated'
+        else:
+            raise ValueError('mode should be one of cil, joint, dil, vil')
+
         self.url = 'http://bias.csr.unibo.it/maltoni/download/core50/core50_128x128.zip'
         self.filename = 'core50_128x128.zip'
         self.extract_folder = os.path.join(self.root, 'core50_128x128')
@@ -452,9 +459,9 @@ class CORe50(torch.utils.data.Dataset):
 
 
         if self.train:
-            self.dst = os.path.join(self.root, f"train_{mode}")
+            self.dst = os.path.join(self.root, f"train_{self.folder_type}")
         else:
-            self.dst = os.path.join(self.root, f"test_{mode}")
+            self.dst = os.path.join(self.root, f"test_{self.folder_type}")
 
         # 목적 폴더가 없으면 split()을 통해 재구성합니다.
         if not os.path.exists(self.dst):
@@ -474,9 +481,8 @@ class CORe50(torch.utils.data.Dataset):
             rmtree(self.extract_folder)
             
         if self.train:
-            if self.mode not in ['cil', 'joint']:
-                self.data = [datasets.ImageFolder(os.path.join(self.dst, s), transform=transform)
-                             for s in self.get_train_sessions()]
+            if self.folder_type == 'domain_separated':
+                self.data = [datasets.ImageFolder(os.path.join(self.dst, s), transform=transform) for s in self.get_train_sessions()]
             else:
                 self.data = datasets.ImageFolder(self.dst, transform=transform)
         else:
@@ -493,14 +499,14 @@ class CORe50(torch.utils.data.Dataset):
 
     def split(self, src, dst):
         """
-        src: 압축 해제된 원본 폴더 (예: .../CORe50/core50_128x128)
-        dst: 최종적으로 구성할 폴더 (예: .../CORe50/train_cil, test_dil 등)
+        src: 압축 해제된 원본 폴더 
+        dst: 최종적으로 구성할 폴더 
         mode에 따라 두 가지 방식으로 데이터를 재구성
         """
         os.makedirs(dst, exist_ok=True)
         if self.train:
             # 학습 데이터 재구성
-            if self.mode not in ['cil', 'joint']:
+            if self.folder_type == 'domain_separated':
                 # 각 세션 폴더(s1, s2, ... 등)를 dst로 이동
                 for s in tqdm.tqdm(self.get_train_sessions(), desc='Preprocessing Training'):
                     src_folder = os.path.join(src, s)
@@ -544,6 +550,12 @@ class DomainNet(torch.utils.data.Dataset):
         self.train = train
         self.mode = mode
 
+        if self.mode in ['cil', 'joint']:
+            self.folder_type = 'domain_merged'
+        else:
+            self.folder_type = 'domain_separated'
+
+        
         self.url = [
             'http://csr.bu.edu/ftp/visda/2019/multi-source/groundtruth/clipart.zip',
             'http://csr.bu.edu/ftp/visda/2019/multi-source/infograph.zip',
@@ -608,7 +620,7 @@ class DomainNet(torch.utils.data.Dataset):
                     print('Downloading from '+self.url[i])
                     download_url(self.url[i], root, filename=self.filename[i])
 
-        if not os.path.exists(self.root + '/train') and not os.path.exists(self.root + '/test'):
+        if not os.path.exists(self.root + f"/train_{self.folder_type}") and not os.path.exists(self.root + f"/test_{self.folder_type}"):
             for i in range(len(self.fpath)):
                 if not os.path.exists(os.path.join(self.root, self.filename[i][:-4])):
                     with zipfile.ZipFile(os.path.join(self.root, self.filename[i]), 'r') as zf:
@@ -621,22 +633,21 @@ class DomainNet(torch.utils.data.Dataset):
             self.split()
         
         if self.train:
-            fpath = self.root + '/train'
+            fpath = self.root + f"/train_{self.folder_type}"
             if self.mode not in ['cil', 'joint']:
                 self.data = [datasets.ImageFolder(f'{fpath}/{d}', transform=transform) for d in ['clipart', 'infograph', 'painting', 'quickdraw', 'real', 'sketch']]
             else:
                 self.data = datasets.ImageFolder(fpath, transform=transform)
         else:
-            fpath = self.root + '/test'
+            fpath = self.root + f"/test_{self.folder_type}"
             if self.mode not in ['cil', 'joint']:
                 self.data = [datasets.ImageFolder(f'{fpath}/{d}', transform=transform) for d in ['clipart', 'infograph', 'painting', 'quickdraw', 'real', 'sketch']]
             else:
                 self.data = datasets.ImageFolder(fpath, transform=transform)
 
     def split(self):
-        train_folder = self.root + '/train'
-        test_folder = self.root + '/test'
-
+        train_folder = self.root + f"/train_{self.folder_type}"
+        test_folder = self.root + f"/test_{self.folder_type}"
         if os.path.exists(train_folder):
             rmtree(train_folder)
         if os.path.exists(test_folder):
@@ -644,7 +655,7 @@ class DomainNet(torch.utils.data.Dataset):
         os.mkdir(train_folder)
         os.mkdir(test_folder)
 
-        if self.mode not in ['cil', 'joint']:
+        if self.folder_type == 'domain_separated':
             for i in tqdm.tqdm(range(len(self.train_url_list)), desc='Preprocessing'):
                 train_list = self.train_url_list[i].split('/')[-1]
                 
@@ -732,14 +743,23 @@ class CLEAR(torch.utils.data.Dataset):
         self.mode = mode
         self.args = args
 
+        if self.mode in ['cil', 'joint']:
+            self.folder_type = 'domain_merged'
+        elif self.mode in ['dil']:
+            self.folder_type = 'domain_separated_11'
+        elif self.mode in ['vil']:
+            self.folder_type = 'domain_separated_5'
+        else:
+            raise ValueError('mode should be one of cil, joint, dil, vil')
+
         if self.train:
             src = os.path.join(self.root, "train_image_only", "labeled_images")
-            dst = os.path.join(self.root, f"train_{mode}")
+            dst = os.path.join(self.root, f"train_{self.folder_type}")
         else:
             src = os.path.join(self.root, "test",  "labeled_images")
-            dst = os.path.join(self.root, f"test_{mode}")
+            dst = os.path.join(self.root, f"test_{self.folder_type}")
                 
-        if not os.path.exists(dst):
+        if not os.path.exists(dst): # 폴더가 없으면 다운로드 및 압축 해제
             if download:
                 self.download()
             self.split(src, dst)
@@ -749,10 +769,11 @@ class CLEAR(torch.utils.data.Dataset):
                 rmtree(os.path.join(self.root, "test"))
         self.fpath = dst
         
-        if self.mode not in ['cil', 'joint']:
-            if self.mode == 'dil': args.num_domains = 11
-            elif self.mode == 'vil': args.num_domains = 5
-            domain_list = [str(i) for i in range(0,args.num_domains)]
+        if self.folder_type == 'domain_separated_11':
+            domain_list = [str(i) for i in range(0,11)]
+            self.data = [datasets.ImageFolder(os.path.join(self.fpath, d), transform=transform) for d in domain_list]
+        elif self.folder_type == 'domain_separated_5':
+            domain_list = [str(i) for i in range(0,5)]
             self.data = [datasets.ImageFolder(os.path.join(self.fpath, d), transform=transform) for d in domain_list]
         else:
             self.data = datasets.ImageFolder(self.fpath, transform=transform)
@@ -770,12 +791,12 @@ class CLEAR(torch.utils.data.Dataset):
 
         os.mkdir(dst)
         
-        if self.mode not in ['cil', 'joint']:
-            # 도메인 "1"부터 "10"을 2개씩 묶어서 5개의 그룹으로 만듦
-            if self.mode == 'vil':
+        if self.folder_type in ['domain_separated_5','domain_separated_11']:
+            if self.folder_type == 'domain_separated_5':
+                # 도메인 "1"부터 "10"을 2개씩 묶어서 5개의 그룹으로 만듦
                 groups = [["1", "2"], ["3", "4"], ["5", "6"], ["7", "8"], ["9", "10"]]
                 self.args.num_domains = 5
-            elif self.mode == 'dil':
+            elif self.folder_type == 'domain_separated_11':
                 groups = [[str(i)] for i in range(0,11)]
                 self.args.num_domains = 11
             for i, group in tqdm.tqdm(enumerate(groups, start=0), desc='Preprocessing'):

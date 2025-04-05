@@ -13,6 +13,7 @@ from torch.utils.model_zoo import tqdm
 from torchvision import transforms
 from continual_datasets.base_datasets import *
 from torch.utils.data import ConcatDataset
+from torchvision.datasets import CIFAR10, CIFAR100
 
 
 def get_dataset(dataset, transform_train, transform_val, mode, args):
@@ -37,8 +38,8 @@ def get_dataset(dataset, transform_train, transform_val, mode, args):
         dataset_val = SynDigit(args.data_path, train=False, download=True, transform=transform_val)
 
     elif dataset == 'EMNIST':
-        dataset_train = EMNIST_RGB(args.data_path, train=True, download=True, transform=transform_train, num_random_classes=10, split='letters')
-        dataset_val = EMNIST_RGB(args.data_path, train=False, download=True, transform=transform_val, num_random_classes=10, split='letters')
+        dataset_train = EMNIST_RGB(args.data_path, train=True, download=True, transform=transform_train, num_random_classes=26, split='letters')
+        dataset_val = EMNIST_RGB(args.data_path, train=False, download=True, transform=transform_val, num_random_classes=26, split='letters')
 
     elif dataset == 'iDigits':
         mnist_train, mnist_val = get_dataset('MNIST', transform_train, transform_val, mode, args)
@@ -60,7 +61,14 @@ def get_dataset(dataset, transform_train, transform_val, mode, args):
     elif dataset == 'CLEAR':
         dataset_train = CLEAR(args.data_path, train=True, download=True, transform=transform_train, mode=mode, args=args).data
         dataset_val = CLEAR(args.data_path, train=False, download=True, transform=transform_val, mode=mode, args=args).data
-        
+
+    elif dataset == 'CIFAR10':
+        dataset_train = CIFAR10(args.data_path, train=True, download=True, transform=transform_train)
+        dataset_val = CIFAR10(args.data_path, train=False, download=True, transform=transform_val)
+
+    elif dataset == 'CIFAR100':
+        dataset_train = CIFAR100(args.data_path, train=True, download=True, transform=transform_train)
+        dataset_val = CIFAR100(args.data_path, train=False, download=True, transform=transform_val)
     else:
         raise ValueError('Dataset {} not found.'.format(dataset))
     
@@ -124,10 +132,10 @@ def set_data_config(args):
         args.num_domains = 6
     elif args.dataset == "CORe50":
         args.num_classes = 50
-        args.num_domains = 8
+        args.num_domains = 8 
     elif args.dataset == "CLEAR":
         args.num_classes = 100
-        args.num_domains = 5
+        args.num_domains = 5 #11    
     else:
         raise ValueError(f"Unknown dataset: {args.dataset}")
     return args
