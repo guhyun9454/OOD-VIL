@@ -49,6 +49,7 @@ def main(args):
     print(args)
     
     if args.eval:
+        print(f"{'Evaluation Only':=^60}")
         acc_matrix = np.zeros((args.num_tasks, args.num_tasks))
 
         for task_id in range(args.num_tasks):
@@ -60,9 +61,9 @@ def main(args):
             else:
                 raise ValueError('No checkpoint found at:', checkpoint_path)
             
-            _ = engine.evaluate_till_now(model, data_loader, device, task_id, class_mask, acc_matrix, args = args)
+            # _ = engine.evaluate_till_now(model, data_loader, device, task_id, class_mask, acc_matrix, args = args)
             if args.ood_dataset:
-                print(f"{'OOD Evaluation':=^60}")
+                print(f"{f'Task {task_id} OOD Evaluation':=^60}")
                 ood_start = time.time()
                 all_id_datasets = torch.utils.data.ConcatDataset([dl['val'].dataset for dl in data_loader[:task_id+1]])
                 ood_loader = data_loader[-1]['ood']
