@@ -14,7 +14,7 @@ from timm.scheduler import create_scheduler
 from timm.optim import create_optimizer
 
 from continual_datasets.build_incremental_scenario import build_continual_dataloader
-from continual_datasets.dataset_utils import set_data_config, get_ood_dataset, get_dataset
+from continual_datasets.dataset_utils import set_data_config, get_ood_dataset, get_dataset, find_tasks_with_unseen_classes, UnknownWrapper
 import models #여기서 models.py의 @register_model이 실행되고, timm의 모델 레지스트리에 등록, create_model를 통해 custom vit가 호출됨
 import utils
 import os
@@ -60,15 +60,20 @@ def main(args):
             else:
                 raise ValueError('No checkpoint found at:', checkpoint_path)
             
-            _ = engine.evaluate_till_now(model, data_loader, device, task_id, class_mask, acc_matrix, args = args)
-            if args.ood_dataset:
-                print(f"{'OOD Evaluation':=^60}")
-                ood_start = time.time()
-                all_id_datasets = torch.utils.data.ConcatDataset([dl['val'].dataset for dl in data_loader[:task_id+1]])
-                ood_loader = data_loader[-1]['ood']
-                engine.evaluate_ood(model, all_id_datasets, ood_loader, device, args)
-                ood_duration = time.time() - ood_start
-                print(f"OOD evaluation completed in {str(datetime.timedelta(seconds=int(ood_duration)))}")
+            # _ = engine.evaluate_till_now(model, data_loader, device, task_id, class_mask, acc_matrix, args = args)
+
+            print(f"{f'Task {task_id+1} OOD Evaluation':=^60}")
+            ood_start = time.time()
+            all_id_datasets = torch.utils.data.ConcatDataset([dl['val'].dataset for dl in data_loader[:task_id+1]])
+            unseen_tasks = find_tasks_with_unseen_classes(task_id,class_mask)
+            if unseen_tasks == []:
+                print("No unseen tasks")
+                continue
+            print(unseen_tasks)
+            ood_datasets =  torch.utils.data.ConcatDataset([UnknownWrapper(data_loader[i]['val'].dataset, args.num_classes) for i in unseen_tasks])
+            engine.evaluate_ood(model, all_id_datasets, ood_datasets, device, args)
+            ood_duration = time.time() - ood_start
+            print(f"OOD evaluation completed in {str(datetime.timedelta(seconds=int(ood_duration)))}")
         return
     
     if args.ood_eval:
@@ -145,6 +150,7 @@ if __name__ == '__main__':
     parser.add_argument('--device', default='cuda', help='device to use for training / testing')
     parser.add_argument('--seed', default=42, type=int)
     parser.add_argument('--eval', action='store_true', help='Perform evaluation only')
+    parser.add_argument('--num_workers', default=8, type=int, help='number of workers for data loading')
 
     # Continual learning parameters
     parser.add_argument('--num_tasks', default=10, type=int, help='number of sequential tasks')
