@@ -312,8 +312,8 @@ class Engine():
             if self.args.d_threshold and task_id == self.current_task:
                 domain_idx = int(self.label_train_count[self.current_classes][0])
                 self.acc_per_label[self.current_classes, domain_idx] += np.round(label_correct / label_total, decimals=3)
-                print(self.label_train_count)
-                print(self.acc_per_label)
+                # print(self.label_train_count)
+                # print(self.acc_per_label)
         metric_logger.synchronize_between_processes()
         print('* Acc@1 {top1.global_avg:.3f} Acc@5 {top5.global_avg:.3f} loss {losses.global_avg:.3f}'
               .format(top1=metric_logger.meters['Acc@1'], top5=metric_logger.meters['Acc@5'], losses=metric_logger.meters['Loss']))
@@ -523,8 +523,8 @@ class Engine():
         id_dataset_aligned = RandomSampleWrapper(id_datasets, min_size, args.seed) if id_size > min_size else id_datasets
         ood_dataset_aligned = RandomSampleWrapper(ood_dataset, min_size, args.seed) if ood_size > min_size else ood_dataset
 
-        aligned_id_loader = torch.utils.data.DataLoader(id_dataset_aligned, batch_size=args.batch_size, shuffle=False, num_workers=4)
-        aligned_ood_loader = torch.utils.data.DataLoader(ood_dataset_aligned, batch_size=args.batch_size, shuffle=False, num_workers=4)
+        aligned_id_loader = torch.utils.data.DataLoader(id_dataset_aligned, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
+        aligned_ood_loader = torch.utils.data.DataLoader(ood_dataset_aligned, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
         
         # raw anomaly score와 raw pred_class 저장 (thresholding은 나중에 수행)
         id_anomaly_scores_list = []
@@ -535,12 +535,20 @@ class Engine():
         ood_pred_class_list = []
         ood_true_labels = []
         
+        # verbose 모드에서 logit 값을 출력하기 위한 리스트
+        id_logits_list = []
+        ood_logits_list = []
+        
         with torch.no_grad():
             # ID 데이터 처리
             for inputs, targets in aligned_id_loader:
                 inputs = inputs.to(device)
                 outputs = model(inputs)
                 outputs, _, _ = self.get_max_label_logits(outputs, list(range(self.num_classes)), slice=True)
+                
+                # 로그잇 저장 (verbose 모드)
+                if args.verbose:
+                    id_logits_list.append(outputs.detach().cpu())
                 
                 # raw anomaly score 저장
                 scores = infer_func(outputs)
@@ -557,6 +565,10 @@ class Engine():
                 inputs = inputs.to(device)
                 outputs = model(inputs)
                 outputs, _, _ = self.get_max_label_logits(outputs, list(range(self.num_classes)), slice=True)
+                
+                # 로그잇 저장 (verbose 모드)
+                if args.verbose:
+                    ood_logits_list.append(outputs.detach().cpu())
                 
                 scores = infer_func(outputs)
                 ood_anomaly_scores_list.append(scores)
@@ -601,6 +613,30 @@ class Engine():
         id_true = torch.cat(id_true_labels, dim=0)
         ood_true = torch.cat(ood_true_labels, dim=0)
         
+        # verbose: confusion matrix 및 로그잇, 레이블 샘플 출력
+        if args.verbose:
+            # ID와 OOD의 예측 결과 및 정답 결합
+            all_preds = torch.cat([id_preds, ood_preds], dim=0)
+            all_trues = torch.cat([id_true, ood_true], dim=0)
+            from sklearn.metrics import confusion_matrix
+            conf_mat = confusion_matrix(all_trues.cpu().numpy(), all_preds.cpu().numpy())
+            print("Confusion Matrix:")
+            print(conf_mat)
+            
+            # 첫 번째 배치의 샘플 로그잇과 레이블 출력 (샘플 수: 5)
+            if id_logits_list:
+                print("Sample ID logits (first 5 samples from first batch):")
+                print(id_logits_list[0][:5])
+            if ood_logits_list:
+                print("Sample OOD logits (first 5 samples from first batch):")
+                print(ood_logits_list[0][:5])
+            if id_true_labels:
+                print("Sample ID labels (first batch):")
+                print(id_true_labels[0])
+            if ood_true_labels:
+                print("Sample OOD labels (first batch):")
+                print(ood_true_labels[0])
+        
         acc_id = (id_preds == id_true).float().mean().item()
         acc_ood = (ood_preds == ood_true).float().mean().item()
         h_score = 2 * acc_id * acc_ood / (acc_id + acc_ood) if (acc_id + acc_ood) > 0 else 0.0
@@ -630,6 +666,7 @@ class Engine():
         print(f"AUPRC in: {auprc_in * 100:.2f}%, AUPRC out: {auprc_out * 100:.2f}%")
         
         return all_scores, binary_labels, acc_id
+
 
 
 

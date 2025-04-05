@@ -14,7 +14,7 @@ from timm.scheduler import create_scheduler
 from timm.optim import create_optimizer
 
 from continual_datasets.build_incremental_scenario import build_continual_dataloader
-from continual_datasets.dataset_utils import set_data_config, get_ood_dataset, get_dataset
+from continual_datasets.dataset_utils import set_data_config, get_ood_dataset, get_dataset, find_tasks_with_unseen_classes, UnknownWrapper
 import models #여기서 models.py의 @register_model이 실행되고, timm의 모델 레지스트리에 등록, create_model를 통해 custom vit가 호출됨
 import utils
 import os
@@ -146,6 +146,7 @@ if __name__ == '__main__':
     parser.add_argument('--device', default='cuda', help='device to use for training / testing')
     parser.add_argument('--seed', default=42, type=int)
     parser.add_argument('--eval', action='store_true', help='Perform evaluation only')
+    parser.add_argument('--num_workers', default=8, type=int, help='number of workers for data loading')
 
     # Continual learning parameters
     parser.add_argument('--num_tasks', default=10, type=int, help='number of sequential tasks')

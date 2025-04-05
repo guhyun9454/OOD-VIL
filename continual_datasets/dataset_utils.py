@@ -15,6 +15,19 @@ from continual_datasets.base_datasets import *
 from torch.utils.data import ConcatDataset
 from torchvision.datasets import CIFAR10, CIFAR100
 
+def find_tasks_with_unseen_classes(task_id, class_mask):
+    seen_classes = set()
+    for i in range(task_id + 1):
+        seen_classes.update(class_mask[i])
+
+    unseen_tasks = []
+    
+    for future_task_id in range(task_id + 1, len(class_mask)):
+        task_classes = set(class_mask[future_task_id])
+        if not task_classes.issubset(seen_classes):
+            unseen_tasks.append(future_task_id)
+    
+    return unseen_tasks
 
 def get_dataset(dataset, transform_train, transform_val, mode, args):
     if dataset == 'MNIST':
