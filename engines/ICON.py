@@ -474,16 +474,16 @@ class Engine():
             if args.save and utils.is_main_process():
                 with open(os.path.join(args.save, '{}_stats.txt'.format(datetime.datetime.now().strftime('log_%Y_%m_%d_%H_%M'))), 'a') as f:
                     f.write(json.dumps(log_stats) + '\n')
-            if args.ood_dataset:
-                print(f"{'OOD Evaluation':=^60}")
-                ood_start = time.time()
-                # ID 데이터셋은 모든 태스크의 검증 데이터(ICON의 예측 로직 적용)를 합침
-                all_id_datasets = torch.utils.data.ConcatDataset([dl['val'].dataset for dl in data_loader[:task_id+1]])
-                # ood_loader는 마지막 태스크에 추가된 ood 데이터 로더 사용
-                ood_loader = data_loader[-1]['ood']
-                self.evaluate_ood(model, all_id_datasets, ood_loader, device, args)
-                ood_duration = time.time() - ood_start
-                print(f"OOD evaluation completed in {str(datetime.timedelta(seconds=int(ood_duration)))}")
+        if args.ood_dataset:
+            print(f"{'OOD Evaluation':=^60}")
+            ood_start = time.time()
+            # ID 데이터셋은 모든 태스크의 검증 데이터(ICON의 예측 로직 적용)를 합침
+            all_id_datasets = torch.utils.data.ConcatDataset([dl['val'].dataset for dl in data_loader])
+            # ood_loader는 마지막 태스크에 추가된 ood 데이터 로더 사용
+            ood_loader = data_loader[-1]['ood']
+            self.evaluate_ood(model, all_id_datasets, ood_loader, device, args)
+            ood_duration = time.time() - ood_start
+            print(f"OOD evaluation completed in {str(datetime.timedelta(seconds=int(ood_duration)))}")
 
 
     def evaluate_ood(self, model, id_datasets, ood_dataset, device, args):
