@@ -62,14 +62,14 @@ def main(args):
                 raise ValueError('No checkpoint found at:', checkpoint_path)
             
             # _ = engine.evaluate_till_now(model, data_loader, device, task_id, class_mask, acc_matrix, args = args)
-            if args.ood_dataset:
-                print(f"{f'Task {task_id} OOD Evaluation':=^60}")
-                ood_start = time.time()
-                all_id_datasets = torch.utils.data.ConcatDataset([dl['val'].dataset for dl in data_loader[:task_id+1]])
-                ood_loader = data_loader[-1]['ood']
-                engine.evaluate_ood(model, all_id_datasets, ood_loader, device, args)
-                ood_duration = time.time() - ood_start
-                print(f"OOD evaluation completed in {str(datetime.timedelta(seconds=int(ood_duration)))}")
+        if args.ood_dataset:
+            print(f"{f'Task {task_id} OOD Evaluation':=^60}")
+            ood_start = time.time()
+            all_id_datasets = torch.utils.data.ConcatDataset([dl['val'].dataset for dl in data_loader])
+            ood_loader = data_loader[-1]['ood']
+            engine.evaluate_ood(model, all_id_datasets, ood_loader, device, args)
+            ood_duration = time.time() - ood_start
+            print(f"OOD evaluation completed in {str(datetime.timedelta(seconds=int(ood_duration)))}")
         return
     
     if args.ood_eval:

@@ -24,7 +24,19 @@ from sklearn.metrics import roc_auc_score, confusion_matrix
 from continual_datasets.dataset_utils import RandomSampleWrapper
 
 def load_model(args):
-    init_ICON_args(args)
+    if args.dataset == 'CORe50':
+        init_ICON_CORe50_args(args)
+        print("CORe50 dataset args loaded")
+    elif args.dataset == 'iDigits':
+        init_ICON_iDigits_args(args)
+        print("iDigits dataset args loaded")
+    elif args.dataset == 'DomainNet':
+        init_ICON_DomainNet_args(args)
+        print("DomainNet dataset args loaded")
+    else:
+        init_ICON_default_args(args)
+        print("Default dataset args loaded")
+
     model = create_model(
         "vit_base_patch16_224_ICON",
         pretrained=True,
@@ -672,9 +684,9 @@ class Engine():
 
 
 
-def init_ICON_args(args):
-    args.IC = True  
-    args.d_threshold = True  
+def init_ICON_default_args(args):
+    args.IC = True  #
+    args.d_threshold = True  #
     args.gamma = 10.0  
     args.thre = 0 
     args.alpha = 1.0  
@@ -691,3 +703,81 @@ def init_ICON_args(args):
 
     args.clip_grad = 0.0
     args.reinit_optimizer = True
+
+def init_ICON_CORe50_args(args):
+
+    args.IC = True  #
+    args.CAST = True 
+
+    args.d_threshold = True  #
+
+    args.lr = 0.0028125
+
+    args.opt_betas = [0.9, 0.999]
+    args.batch_size = 24
+    args.ema_decay = 0.9999
+    args.k = 3 #Number of Clusters
+    args.alpha = 1
+    args.beta = 0.05
+    args.gamma = 2
+
+    args.adapt_blocks = [0, 1, 2, 3, 4] 
+
+    args.reinit_optimizer = True
+    args.clip_grad = 0.0
+    args.num_freeze_epochs = 3  
+    args.eval_only_emas = False 
+    args.norm_cast = True 
+
+def init_ICON_iDigits_args(args):
+
+    args.IC = True  #
+    args.CAST = True 
+
+    args.d_threshold = True  #
+
+    args.lr = 0.0028125
+
+    args.opt_betas = [0.9, 0.999]
+    args.batch_size = 24
+    args.ema_decay = 0.9999
+    args.k = 2 #Number of Clusters
+    args.alpha = 1
+    args.beta = 0.05
+    args.gamma = 2
+
+    args.adapt_blocks = [0, 1, 2, 3, 4] 
+
+    args.reinit_optimizer = True
+    args.clip_grad = 0.0
+    args.num_freeze_epochs = 3  
+    args.eval_only_emas = False 
+    args.norm_cast = True 
+
+def init_ICON_DomainNet_args(args):
+
+    args.IC = True  #
+    args.CAST = True 
+
+    args.d_threshold = True  #
+
+    args.lr = 0.0028125
+
+    args.opt_betas = [0.9, 0.999]
+    args.batch_size = 24
+    args.ema_decay = 0.9999
+    args.k = 3 #Number of Clusters
+    args.alpha = 1
+    args.beta = 0.01
+    args.gamma = 2
+
+    args.adapt_blocks = [0, 1, 2, 3, 4] 
+
+    args.reinit_optimizer = True
+    args.clip_grad = 0.0
+    args.num_freeze_epochs = 3  
+    args.eval_only_emas = False 
+    args.norm_cast = True 
+
+
+
