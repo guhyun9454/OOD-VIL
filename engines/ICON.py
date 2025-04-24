@@ -486,16 +486,16 @@ class Engine():
             if args.save and utils.is_main_process():
                 with open(os.path.join(args.save, '{}_stats.txt'.format(datetime.datetime.now().strftime('log_%Y_%m_%d_%H_%M'))), 'a') as f:
                     f.write(json.dumps(log_stats) + '\n')
-        if args.ood_dataset:
-            print(f"{'OOD Evaluation':=^60}")
-            ood_start = time.time()
-            # ID 데이터셋은 모든 태스크의 검증 데이터(ICON의 예측 로직 적용)를 합침
-            all_id_datasets = torch.utils.data.ConcatDataset([dl['val'].dataset for dl in data_loader])
-            # ood_loader는 마지막 태스크에 추가된 ood 데이터 로더 사용
-            ood_loader = data_loader[-1]['ood']
-            self.evaluate_ood(model, all_id_datasets, ood_loader, device, args)
-            ood_duration = time.time() - ood_start
-            print(f"OOD evaluation completed in {str(datetime.timedelta(seconds=int(ood_duration)))}")
+            if args.ood_dataset:
+                print(f"{'OOD Evaluation':=^60}")
+                ood_start = time.time()
+                # ID 데이터셋은 모든 태스크의 검증 데이터(ICON의 예측 로직 적용)를 합침
+                all_id_datasets = torch.utils.data.ConcatDataset([dl['val'].dataset for dl in data_loader[:task_id+1]])
+                # ood_loader는 마지막 태스크에 추가된 ood 데이터 로더 사용
+                ood_loader = data_loader[-1]['ood']
+                self.evaluate_ood(model, all_id_datasets, ood_loader, device, args)
+                ood_duration = time.time() - ood_start
+                print(f"OOD evaluation completed in {str(datetime.timedelta(seconds=int(ood_duration)))}")
 
 
     def evaluate_ood(self, model, id_datasets, ood_dataset, device, args):
@@ -547,9 +547,6 @@ class Engine():
         ood_pred_class_list = []
         ood_true_labels = []
         
-        # verbose 모드에서 logit 값을 출력하기 위한 리스트
-        id_logits_list = []
-        ood_logits_list = []
         
         with torch.no_grad():
             # ID 데이터 처리
@@ -557,16 +554,9 @@ class Engine():
                 inputs = inputs.to(device)
                 outputs = model(inputs)
                 outputs, _, _ = self.get_max_label_logits(outputs, list(range(self.num_classes)), slice=True)
-                
-                # 로그잇 저장 (verbose 모드)
-                if args.verbose:
-                    id_logits_list.append(outputs.detach().cpu())
-                
-                # raw anomaly score 저장
                 scores = infer_func(outputs)
                 id_anomaly_scores_list.append(scores)
                 
-                # raw softmax 예측 (argmax) 저장 (thresholding은 나중에)
                 softmax_outputs = F.softmax(outputs, dim=1)
                 pred_class = torch.max(softmax_outputs, dim=1)[1]
                 id_pred_class_list.append(pred_class)
@@ -578,24 +568,18 @@ class Engine():
                 outputs = model(inputs)
                 outputs, _, _ = self.get_max_label_logits(outputs, list(range(self.num_classes)), slice=True)
                 
-                # 로그잇 저장 (verbose 모드)
-                if args.verbose:
-                    ood_logits_list.append(outputs.detach().cpu())
-                
                 scores = infer_func(outputs)
                 ood_anomaly_scores_list.append(scores)
                 
                 softmax_outputs = F.softmax(outputs, dim=1)
                 pred_class = torch.max(softmax_outputs, dim=1)[1]
                 ood_pred_class_list.append(pred_class)
-                # OOD의 true label은 unknown (args.num_classes)
                 true_labels = torch.full((outputs.size(0),), fill_value=args.num_classes, dtype=torch.long).to(device)
                 ood_true_labels.append(true_labels)
         
         # 텐서로 합치기
         id_anomaly_scores = torch.cat(id_anomaly_scores_list, dim=0)
         ood_anomaly_scores = torch.cat(ood_anomaly_scores_list, dim=0)
-        # 전체 anomaly score에서 global min, max로 정규화
         all_scores_tensor = torch.cat([id_anomaly_scores, ood_anomaly_scores], dim=0)
         if args.normalize_ood_scores:
             min_score = all_scores_tensor.min()
@@ -625,57 +609,24 @@ class Engine():
         id_true = torch.cat(id_true_labels, dim=0)
         ood_true = torch.cat(ood_true_labels, dim=0)
         
-        # verbose: confusion matrix 및 로그잇, 레이블 샘플 출력
-        if args.verbose:
-            # ID와 OOD의 예측 결과 및 정답 결합
-            all_preds = torch.cat([id_preds, ood_preds], dim=0)
-            all_trues = torch.cat([id_true, ood_true], dim=0)
-            from sklearn.metrics import confusion_matrix
-            conf_mat = confusion_matrix(all_trues.cpu().numpy(), all_preds.cpu().numpy())
-            print("Confusion Matrix:")
-            print(conf_mat)
-            
-            # 첫 번째 배치의 샘플 로그잇과 레이블 출력 (샘플 수: 5)
-            if id_logits_list:
-                print("Sample ID logits (first 5 samples from first batch):")
-                print(id_logits_list[0][:5])
-            if ood_logits_list:
-                print("Sample OOD logits (first 5 samples from first batch):")
-                print(ood_logits_list[0][:5])
-            if id_true_labels:
-                print("Sample ID labels (first batch):")
-                print(id_true_labels[0])
-            if ood_true_labels:
-                print("Sample OOD labels (first batch):")
-                print(ood_true_labels[0])
-        
         acc_id = (id_preds == id_true).float().mean().item()
         acc_ood = (ood_preds == ood_true).float().mean().item()
-        h_score = 2 * acc_id * acc_ood / (acc_id + acc_ood) if (acc_id + acc_ood) > 0 else 0.0
         
-        # labels: 0 = OOD, 1 = ID
-        # scores: it is anomality score (the higher the score, the more anomalous)
+        # binary_labels: 0 = OOD, 1 = ID
         binary_labels = np.concatenate([np.ones(id_anomaly_scores_norm.shape[0]),
                                         np.zeros(ood_anomaly_scores_norm.shape[0])])
         # 전체 normalized anomaly score 결합 (numpy array)
         all_scores = torch.cat([id_anomaly_scores_norm, ood_anomaly_scores_norm], dim=0).cpu().numpy()
         
-        # ROC 및 기타 지표 계산
+        # ROC 및 필요한 지표만 계산
         from sklearn import metrics
         fpr, tpr, _ = metrics.roc_curve(binary_labels, all_scores, drop_intermediate=False)
         auroc = metrics.auc(fpr, tpr)
         idx_tpr95 = np.abs(tpr - 0.95).argmin()
         fpr_at_tpr95 = fpr[idx_tpr95]
-        dtacc = 0.5 * (tpr + 1 - fpr).max()
-        auprc_in = metrics.average_precision_score(y_true=binary_labels, y_score=all_scores)
-        auprc_out = metrics.average_precision_score(y_true=binary_labels, y_score=-all_scores, pos_label=0)
         
         print(f"[{ood_method}]: evaluating metrics...")
-        print(f"ID classification accuracy (A_id): {acc_id * 100:.2f}%")
-        print(f"OOD detection accuracy (A_ood): {acc_ood * 100:.2f}%")
-        print(f"Harmonic mean (H_score): {h_score * 100:.2f}%")
-        print(f"AUROC: {auroc * 100:.2f}%, FPR@TPR95: {fpr_at_tpr95 * 100:.2f}%, dtacc: {dtacc * 100:.2f}%")
-        print(f"AUPRC in: {auprc_in * 100:.2f}%, AUPRC out: {auprc_out * 100:.2f}%")
+        print(f"AUROC: {auroc * 100:.2f}%, FPR@TPR95: {fpr_at_tpr95 * 100:.2f}%")
         
         return all_scores, binary_labels, acc_id
 

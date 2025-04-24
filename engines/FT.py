@@ -150,27 +150,17 @@ class Engine:
         aligned_id_loader = torch.utils.data.DataLoader(id_dataset_aligned, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
         aligned_ood_loader = torch.utils.data.DataLoader(ood_dataset_aligned, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
         
-        # raw anomaly score와 raw pred_class 저장 (thresholding은 나중에 수행)
+        # anomaly score 저장
         id_anomaly_scores_list = []
-        id_pred_class_list = []
-        id_true_labels = []
-        
         ood_anomaly_scores_list = []
-        ood_pred_class_list = []
-        ood_true_labels = []
         
         with torch.no_grad():
             # ID 데이터 처리
-            for inputs, targets in aligned_id_loader:
+            for inputs, _ in aligned_id_loader:
                 inputs = inputs.to(device)
-                logits = model(inputs) # logit
+                logits = model(inputs)
                 scores = infer_func(logits)
                 id_anomaly_scores_list.append(scores)
-                
-                softmax_outputs = F.softmax(logits, dim=1)
-                pred_class = torch.max(softmax_outputs, dim=1)[1]
-                id_pred_class_list.append(pred_class)
-                id_true_labels.append(targets.to(device))
             
             # OOD 데이터 처리
             for inputs, _ in aligned_ood_loader:
@@ -178,12 +168,6 @@ class Engine:
                 logits = model(inputs)
                 scores = infer_func(logits)
                 ood_anomaly_scores_list.append(scores)
-                
-                softmax_outputs = F.softmax(logits, dim=1)
-                pred_class = torch.max(softmax_outputs, dim=1)[1]
-                ood_pred_class_list.append(pred_class)
-                true_labels = torch.full((logits.size(0),), fill_value=args.num_classes, dtype=torch.long).to(device)
-                ood_true_labels.append(true_labels)
         
         # 텐서로 합치기 및 정규화 (전역 min-max)
         id_anomaly_scores = torch.cat(id_anomaly_scores_list, dim=0)
@@ -200,50 +184,24 @@ class Engine:
         
         # anomaly score 히스토그램 저장 (verbose 모드)
         if args.verbose:
-            from utils import save_anomaly_histogram
             save_anomaly_histogram(id_anomaly_scores_norm.cpu().numpy(), ood_anomaly_scores_norm.cpu().numpy(), args)
         
-        # thresholding: 정규화된 anomaly score를 기준으로 판별
-        id_pred_class = torch.cat(id_pred_class_list, dim=0)
-        ood_pred_class = torch.cat(ood_pred_class_list, dim=0)
-        
-        id_preds = torch.where(id_anomaly_scores_norm < args.ood_threshold,
-                            torch.full_like(id_pred_class, args.num_classes),
-                            id_pred_class)
-        ood_preds = torch.where(ood_anomaly_scores_norm < args.ood_threshold,
-                                torch.full_like(ood_pred_class, args.num_classes),
-                                ood_pred_class)
-        
-        id_true = torch.cat(id_true_labels, dim=0)
-        ood_true = torch.cat(ood_true_labels, dim=0)
-        
-        acc_id = (id_preds == id_true).float().mean().item()
-        acc_ood = (ood_preds == ood_true).float().mean().item()
-        h_score = 2 * acc_id * acc_ood / (acc_id + acc_ood) if (acc_id + acc_ood) > 0 else 0.0
-        
-        # binary_labels: ID -> 1, OOD -> 0 (ROC 계산용)
+        # binary_labels: 0 = OOD, 1 = ID
         binary_labels = np.concatenate([np.ones(id_anomaly_scores_norm.shape[0]),
                                         np.zeros(ood_anomaly_scores_norm.shape[0])])
         all_scores = torch.cat([id_anomaly_scores_norm, ood_anomaly_scores_norm], dim=0).cpu().numpy()
         
-        # ROC 및 기타 지표 계산
+        # ROC 및 필요한 지표만 계산
         from sklearn import metrics
         fpr, tpr, _ = metrics.roc_curve(binary_labels, all_scores, drop_intermediate=False)
         auroc = metrics.auc(fpr, tpr)
         idx_tpr95 = np.abs(tpr - 0.95).argmin()
         fpr_at_tpr95 = fpr[idx_tpr95]
-        dtacc = 0.5 * (tpr + 1 - fpr).max()
-        auprc_in = metrics.average_precision_score(y_true=binary_labels, y_score=all_scores)
-        auprc_out = metrics.average_precision_score(y_true=binary_labels, y_score=-all_scores, pos_label=0)
         
         print(f"[{ood_method}]: evaluating metrics...")
-        print(f"ID classification accuracy (A_id): {acc_id * 100:.2f}%")
-        print(f"OOD detection accuracy (A_ood): {acc_ood * 100:.2f}%")
-        print(f"Harmonic mean (H_score): {h_score * 100:.2f}%")
-        print(f"AUROC: {auroc * 100:.2f}%, FPR@TPR95: {fpr_at_tpr95 * 100:.2f}%, dtacc: {dtacc * 100:.2f}%")
-        print(f"AUPRC in: {auprc_in * 100:.2f}%, AUPRC out: {auprc_out * 100:.2f}%")
+        print(f"AUROC: {auroc * 100:.2f}%, FPR@TPR95: {fpr_at_tpr95 * 100:.2f}%")
         
-        return all_scores, binary_labels, acc_id
+        return all_scores, binary_labels
     
     def evaluate_till_now(self, model, data_loader, device, task_id, class_mask, acc_matrix, args):
         """
@@ -253,23 +211,22 @@ class Engine:
         for t in range(task_id+1):
             acc_matrix[t, task_id] = self.evaluate_task(model, data_loader[t]['val'], device, t, class_mask, args)
 
-        A_i = [np.mean(acc_matrix[:i+1, i]) for i in range(task_id+1)]
-        A_last = A_i[-1]
-        A_avg = np.mean(A_i)
+        A_last = acc_matrix[task_id, task_id]
+        A_avg = np.mean(acc_matrix[np.triu_indices(task_id + 1)])
 
-        result_str = "[Average accuracy till task{}] A_last: {:.2f} A_avg: {:.2f}".format(task_id+1, A_last, A_avg)
+        result_str = "[Average accuracy till task{}]\tA_last: {:.4f}\tA_avg: {:.4f}".format(task_id+1, A_last, A_avg)
         
         if task_id > 0:
             forgetting = np.mean((np.max(acc_matrix, axis=1) - acc_matrix[:, task_id])[:task_id])
-            result_str += " Forgetting: {:.4f}".format(forgetting)
+            result_str += "\tForgetting: {:.4f}".format(forgetting)
         
         print(result_str)
         if args.verbose:
             sub_matrix = acc_matrix[:task_id+1, :task_id+1]
             result = np.where(np.triu(np.ones_like(sub_matrix, dtype=bool)), sub_matrix, np.nan)
             save_accuracy_heatmap(result, task_id, args)
-
-            
+        
+        return {"Acc@1": A_last}
 
     def train_and_evaluate(self, model, criterion, data_loader, optimizer, lr_scheduler, device, class_mask, args):
         """
@@ -297,6 +254,16 @@ class Engine:
             eval_duration = time.time() - eval_start
             print(f"Task {task_id+1} evaluation completed in {str(datetime.timedelta(seconds=int(eval_duration)))}")
 
+            if args.ood_dataset:
+                print(f"{f'OOD Evaluation':=^60}")
+                ood_start = time.time()
+                # 현재 task까지의 ID 데이터셋만 사용
+                all_id_datasets = torch.utils.data.ConcatDataset([data_loader[t]['val'].dataset for t in range(task_id+1)])
+                ood_loader = data_loader[-1]['ood']
+                self.evaluate_ood(model, all_id_datasets, ood_loader, device, args)
+                ood_duration = time.time() - ood_start
+                print(f"OOD evaluation after Task {task_id+1} completed in {str(datetime.timedelta(seconds=int(ood_duration)))}")
+
             if args.save:
                 checkpoint_dir = os.path.join(args.save, 'checkpoint')
                 os.makedirs(checkpoint_dir, exist_ok=True)
@@ -310,12 +277,3 @@ class Engine:
                 with open(checkpoint_path, 'wb') as f:
                     torch.save(checkpoint, f)
                 print(f"Saved checkpoint for task {task_id+1} at {checkpoint_path}")
-        
-        if args.ood_dataset:
-            print(f"{'OOD Evaluation':=^60}")
-            ood_start = time.time()
-            all_id_datasets = torch.utils.data.ConcatDataset([dl['val'].dataset for dl in data_loader])
-            ood_loader = data_loader[-1]['ood']
-            self.evaluate_ood(model, all_id_datasets, ood_loader, device, args)
-            ood_duration = time.time() - ood_start
-            print(f"OOD evaluation completed in {str(datetime.timedelta(seconds=int(ood_duration)))}")
