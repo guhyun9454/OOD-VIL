@@ -562,25 +562,17 @@ class Engine():
         # 텐서로 합치기
         id_anomaly_scores = torch.cat(id_anomaly_scores_list, dim=0)
         ood_anomaly_scores = torch.cat(ood_anomaly_scores_list, dim=0)
-        all_scores_tensor = torch.cat([id_anomaly_scores, ood_anomaly_scores], dim=0)
-        if args.normalize_ood_scores:
-            min_score = all_scores_tensor.min()
-            max_score = all_scores_tensor.max()
-            id_anomaly_scores_norm = (id_anomaly_scores - min_score) / (max_score - min_score)
-            ood_anomaly_scores_norm = (ood_anomaly_scores - min_score) / (max_score - min_score)
-        else:
-            id_anomaly_scores_norm = id_anomaly_scores
-            ood_anomaly_scores_norm = ood_anomaly_scores
+        # all_scores_tensor = torch.cat([id_anomaly_scores, ood_anomaly_scores], dim=0)
         
         # verbose: anomaly score 히스토그램 저장
         if args.verbose:
             from utils import save_anomaly_histogram
-            save_anomaly_histogram(id_anomaly_scores_norm.cpu().numpy(), ood_anomaly_scores_norm.cpu().numpy(), args)
+            save_anomaly_histogram(id_anomaly_scores.cpu().numpy(), ood_anomaly_scores.cpu().numpy(), args)
         
         # binary_labels: 0 = OOD, 1 = ID
-        binary_labels = np.concatenate([np.ones(id_anomaly_scores_norm.shape[0]),
-                                        np.zeros(ood_anomaly_scores_norm.shape[0])])
-        all_scores = torch.cat([id_anomaly_scores_norm, ood_anomaly_scores_norm], dim=0).cpu().numpy()
+        binary_labels = np.concatenate([np.ones(id_anomaly_scores.shape[0]),
+                                        np.zeros(ood_anomaly_scores.shape[0])])
+        all_scores = torch.cat([id_anomaly_scores, ood_anomaly_scores], dim=0).cpu().numpy()
         
         # ROC 및 필요한 지표만 계산
         from sklearn import metrics
