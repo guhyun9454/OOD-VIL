@@ -654,7 +654,7 @@ def init_ICON_iDigits_args(args):
     args.gamma = 2
 
     args.adapt_blocks = [0, 1, 2, 3, 4] 
-    args.thre = 0 
+    args.thre = 0.5
     args.reinit_optimizer = True
     args.clip_grad = 0.0
     args.num_freeze_epochs = 3  
