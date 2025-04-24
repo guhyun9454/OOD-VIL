@@ -165,7 +165,7 @@ def build_continual_dataloader(args):
 
         dataloader.append({'train': data_loader_train, 'val': data_loader_val})
 
-    if args.verbose:
+    if args.verbose or args.develop_tasks:
         print(f"{'TASK INFO':=^60}")
         print(f"{'IL mode':<20} => {args.IL_mode}")
         print(f"{'Dataset':<20} => {args.dataset}")
