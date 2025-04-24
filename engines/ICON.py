@@ -538,44 +538,26 @@ class Engine():
         aligned_id_loader = torch.utils.data.DataLoader(id_dataset_aligned, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
         aligned_ood_loader = torch.utils.data.DataLoader(ood_dataset_aligned, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
         
-        # raw anomaly score와 raw pred_class 저장 (thresholding은 나중에 수행)
+        # anomaly score 저장
         id_anomaly_scores_list = []
-        id_pred_class_list = []
-        id_true_labels = []
-        
         ood_anomaly_scores_list = []
-        ood_pred_class_list = []
-        ood_true_labels = []
-        
         
         with torch.no_grad():
             # ID 데이터 처리
-            for inputs, targets in aligned_id_loader:
+            for inputs, _ in aligned_id_loader:
                 inputs = inputs.to(device)
                 outputs = model(inputs)
                 outputs, _, _ = self.get_max_label_logits(outputs, list(range(self.num_classes)), slice=True)
                 scores = infer_func(outputs)
                 id_anomaly_scores_list.append(scores)
-                
-                softmax_outputs = F.softmax(outputs, dim=1)
-                pred_class = torch.max(softmax_outputs, dim=1)[1]
-                id_pred_class_list.append(pred_class)
-                id_true_labels.append(targets.to(device))
             
             # OOD 데이터 처리
             for inputs, _ in aligned_ood_loader:
                 inputs = inputs.to(device)
                 outputs = model(inputs)
                 outputs, _, _ = self.get_max_label_logits(outputs, list(range(self.num_classes)), slice=True)
-                
                 scores = infer_func(outputs)
                 ood_anomaly_scores_list.append(scores)
-                
-                softmax_outputs = F.softmax(outputs, dim=1)
-                pred_class = torch.max(softmax_outputs, dim=1)[1]
-                ood_pred_class_list.append(pred_class)
-                true_labels = torch.full((outputs.size(0),), fill_value=args.num_classes, dtype=torch.long).to(device)
-                ood_true_labels.append(true_labels)
         
         # 텐서로 합치기
         id_anomaly_scores = torch.cat(id_anomaly_scores_list, dim=0)
@@ -595,27 +577,9 @@ class Engine():
             from utils import save_anomaly_histogram
             save_anomaly_histogram(id_anomaly_scores_norm.cpu().numpy(), ood_anomaly_scores_norm.cpu().numpy(), args)
         
-        # thresholding: 정규화된 anomaly score를 기준으로 판별
-        id_pred_class = torch.cat(id_pred_class_list, dim=0)
-        ood_pred_class = torch.cat(ood_pred_class_list, dim=0)
-        
-        id_preds = torch.where(id_anomaly_scores_norm < args.ood_threshold,
-                            torch.full_like(id_pred_class, args.num_classes),
-                            id_pred_class)
-        ood_preds = torch.where(ood_anomaly_scores_norm < args.ood_threshold,
-                                torch.full_like(ood_pred_class, args.num_classes),
-                                ood_pred_class)
-        
-        id_true = torch.cat(id_true_labels, dim=0)
-        ood_true = torch.cat(ood_true_labels, dim=0)
-        
-        acc_id = (id_preds == id_true).float().mean().item()
-        acc_ood = (ood_preds == ood_true).float().mean().item()
-        
         # binary_labels: 0 = OOD, 1 = ID
         binary_labels = np.concatenate([np.ones(id_anomaly_scores_norm.shape[0]),
                                         np.zeros(ood_anomaly_scores_norm.shape[0])])
-        # 전체 normalized anomaly score 결합 (numpy array)
         all_scores = torch.cat([id_anomaly_scores_norm, ood_anomaly_scores_norm], dim=0).cpu().numpy()
         
         # ROC 및 필요한 지표만 계산
@@ -628,7 +592,7 @@ class Engine():
         print(f"[{ood_method}]: evaluating metrics...")
         print(f"AUROC: {auroc * 100:.2f}%, FPR@TPR95: {fpr_at_tpr95 * 100:.2f}%")
         
-        return all_scores, binary_labels, acc_id
+        return all_scores, binary_labels
 
 
 

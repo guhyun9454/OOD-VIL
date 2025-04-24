@@ -161,7 +161,6 @@ if __name__ == '__main__':
     # ood evaluation
     parser.add_argument('--ood_method', default='MSP', type=str, help='OOD detection method')
     parser.add_argument('--ood_dataset', default=None, type=str, help='OOD dataset name')
-    parser.add_argument('--ood_threshold', default=0.5, type=float, help='OOD threshold')
     parser.add_argument('--ood_eval', action='store_true', help='Perform ood evaluation only')
     parser.add_argument('--normalize_ood_scores', default=True ,action='store_true', help='Normalize ood scores')
     args = parser.parse_args()

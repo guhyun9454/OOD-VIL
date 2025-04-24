@@ -45,7 +45,6 @@ def save_anomaly_histogram(id_scores, ood_scores, args):
     plt.figure(figsize=(16,12))
     plt.hist(id_scores, bins=30, color='red', alpha=0.6, label='Known (ID) samples')
     plt.hist(ood_scores, bins=30, color='blue', alpha=0.6, label='Unknown (OOD) samples')
-    plt.axvline(x=args.ood_threshold, color='blue', linestyle='dotted', linewidth=2, label='Threshold')
     plt.title("Anomaly Score Histogram")
     plt.xlabel("Anomaly Score")
     plt.ylabel("Frequency")
