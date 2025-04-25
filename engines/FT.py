@@ -203,14 +203,15 @@ class Engine:
         for t in range(task_id+1):
             acc_matrix[t, task_id] = self.evaluate_task(model, data_loader[t]['val'], device, t, class_mask, args)
 
-        A_last = acc_matrix[task_id, task_id]
-        A_avg = np.mean(acc_matrix[np.triu_indices(task_id + 1)])
+        A_i = [np.mean(acc_matrix[:i+1, i]) for i in range(task_id+1)]
+        A_last = A_i[-1]
+        A_avg = np.mean(A_i)
 
-        result_str = "[Average accuracy till task{}]\tA_last: {:.4f}\tA_avg: {:.4f}".format(task_id+1, A_last, A_avg)
+        result_str = "[Average accuracy till task{}] A_last: {:.2f} A_avg: {:.2f}".format(task_id+1, A_last, A_avg)
         
         if task_id > 0:
             forgetting = np.mean((np.max(acc_matrix, axis=1) - acc_matrix[:, task_id])[:task_id])
-            result_str += "\tForgetting: {:.4f}".format(forgetting)
+            result_str += " Forgetting: {:.4f}".format(forgetting)
         
         print(result_str)
         if args.verbose:

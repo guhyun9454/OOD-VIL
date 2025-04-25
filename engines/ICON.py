@@ -19,9 +19,9 @@ import torch.nn.functional as F
 from sklearn.cluster import KMeans
 from timm.models import create_model
 
-# 추가: OOD 평가에 필요한 모듈들
 from sklearn.metrics import roc_auc_score, confusion_matrix
 from continual_datasets.dataset_utils import RandomSampleWrapper
+from utils import save_accuracy_heatmap
 
 def load_model(args):
     if args.dataset == 'CORe50':
@@ -334,23 +334,31 @@ class Engine():
     @torch.no_grad()
     def evaluate_till_now(self, model: torch.nn.Module, data_loader, 
                           device, task_id=-1, class_mask=None, acc_matrix=None, ema_model=None, args=None):
-        stat_matrix = np.zeros((3, args.num_tasks))
+        """
+        현재까지의 모든 task에 대해 평가하고,
+        A_last, A_avg, Forgetting 지표를 계산하여 출력합니다.
+        """
         for i in range(task_id + 1):
             test_stats = self.evaluate(model=model, data_loader=data_loader[i]['val'], 
                                        device=device, task_id=i, class_mask=class_mask, ema_model=ema_model, args=args)
-            stat_matrix[0, i] = test_stats['Acc@1']
-            stat_matrix[1, i] = test_stats['Acc@5']
-            stat_matrix[2, i] = test_stats['Loss']
             acc_matrix[i, task_id] = test_stats['Acc@1']
-        avg_stat = np.divide(np.sum(stat_matrix, axis=1), task_id + 1)
-        diagonal = np.diag(acc_matrix)
-        A_avg = np.mean(acc_matrix[np.triu_indices(task_id + 1)])
-        result_str = "[Average accuracy till task{}]\tA_last: {:.4f}\tA_avg: {:.4f}".format(task_id + 1, avg_stat[0], A_avg)
+        
+        A_i = [np.mean(acc_matrix[:i+1, i]) for i in range(task_id+1)]
+        A_last = A_i[-1]
+        A_avg = np.mean(A_i)
+        
+        result_str = "[Average accuracy till task{}] A_last: {:.2f} A_avg: {:.2f}".format(task_id+1, A_last, A_avg)
+        
         if task_id > 0:
             forgetting = np.mean((np.max(acc_matrix, axis=1) - acc_matrix[:, task_id])[:task_id])
-            backward = np.mean((acc_matrix[:, task_id] - diagonal)[:task_id])
-            result_str += "\tForgetting: {:.4f}\tBackward: {:.4f}".format(forgetting, backward)
+            result_str += " Forgetting: {:.4f}".format(forgetting)
+        
         print(result_str)
+        if args.verbose:
+            sub_matrix = acc_matrix[:task_id+1, :task_id+1]
+            result = np.where(np.triu(np.ones_like(sub_matrix, dtype=bool)), sub_matrix, np.nan)
+            save_accuracy_heatmap(result, task_id, args)
+        
         return test_stats
 
     def flatten_parameters(self, modules):
