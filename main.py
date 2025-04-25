@@ -48,7 +48,7 @@ def main(args):
     
     print(args)
     
-    if args.eval:
+    if args.eval or args.ood_eval:
         print(f"{'Evaluation Only':=^60}")
         acc_matrix = np.zeros((args.num_tasks, args.num_tasks))
 
@@ -61,39 +61,18 @@ def main(args):
             else:
                 raise ValueError('No checkpoint found at:', checkpoint_path)
             
-            # _ = engine.evaluate_till_now(model, data_loader, device, task_id, class_mask, acc_matrix, args = args)
-        if args.ood_dataset:
-            print(f"{f'Task {task_id} OOD Evaluation':=^60}")
-            ood_start = time.time()
-            all_id_datasets = torch.utils.data.ConcatDataset([dl['val'].dataset for dl in data_loader])
-            ood_loader = data_loader[-1]['ood']
-            engine.evaluate_ood(model, all_id_datasets, ood_loader, device, args)
-            ood_duration = time.time() - ood_start
-            print(f"OOD evaluation completed in {str(datetime.timedelta(seconds=int(ood_duration)))}")
+            _ = engine.evaluate_till_now(model, data_loader, device, task_id, class_mask, acc_matrix, args = args)
+            if args.ood_dataset and args.ood_eval:
+                print(f"{f'Task {task_id+1} OOD Evaluation':=^60}")
+                ood_start = time.time()
+                # 현재 태스크까지의 ID 데이터셋만 사용
+                all_id_datasets = torch.utils.data.ConcatDataset([data_loader[t]['val'].dataset for t in range(task_id+1)])
+                ood_loader = data_loader[-1]['ood']
+                engine.evaluate_ood(model, all_id_datasets, ood_loader, device, args)
+                ood_duration = time.time() - ood_start
+                print(f"Task {task_id+1} OOD evaluation completed in {str(datetime.timedelta(seconds=int(ood_duration)))}")
         return
-    
-    if args.ood_eval:
 
-        checkpoint_path = os.path.join(args.save, 'checkpoint/task{}_checkpoint.pth'.format(args.num_tasks))
-        if os.path.exists(checkpoint_path):
-            print('Loading checkpoint from:', checkpoint_path)
-            checkpoint = torch.load(checkpoint_path)
-            model.load_state_dict(checkpoint['model'])
-        else:
-            raise ValueError('No checkpoint found at:', checkpoint_path)
-        
-        if args.ood_dataset:
-            print(f"{'OOD Evaluation':=^60}")
-            ood_start = time.time()
-            all_id_datasets = torch.utils.data.ConcatDataset([dl['val'].dataset for dl in data_loader])
-            ood_loader = data_loader[-1]['ood']
-            engine.evaluate_ood(model, all_id_datasets, ood_loader, device, args)
-            ood_duration = time.time() - ood_start
-            print(f"OOD evaluation completed in {str(datetime.timedelta(seconds=int(ood_duration)))}")
-        else:
-            raise ValueError('No ood dataset')
-        
-        return
         
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print('number of params:', n_parameters)
