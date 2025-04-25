@@ -7,10 +7,9 @@
 # -- Jaeho Lee, dlwogh9344@khu.ac.kr
 # ------------------------------------------
 import torch.nn as nn
-
 from timm.models._registry import register_model
-from timm.data import IMAGENET_INCEPTION_MEAN, IMAGENET_INCEPTION_STD
 from engines.custom_vit.vit_with_adapter import _create_vision_transformer
+from timm.data import IMAGENET_INCEPTION_MEAN, IMAGENET_INCEPTION_STD
 
 __all__ = [
     'vit_base_patch16_224_ICON',

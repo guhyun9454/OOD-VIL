@@ -27,7 +27,7 @@ import logging
 import math
 from collections import OrderedDict
 from functools import partial
-from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Callable, List, Optional, Sequence, Tuple, Union, Dict
 
 import torch
 import torch.nn as nn
@@ -35,12 +35,10 @@ import torch.nn.functional as F
 import torch.utils.checkpoint
 from torch.jit import Final
 
-from timm.layers import (DropPath, Mlp, PatchDropout, PatchEmbed, RmsNorm, 
-                         SwiGLUPacked, adapt_input_conv, lecun_normal_, 
-                         resample_abs_pos_embed, resample_patch_embed, 
-                         trunc_normal_, use_fused_attn)
+from timm.layers import PatchEmbed, Mlp, DropPath, trunc_normal_, lecun_normal_, resample_patch_embed, \
+    resample_abs_pos_embed, RmsNorm, PatchDropout, use_fused_attn, SwiGLUPacked
 from timm.models._builder import build_model_with_cfg
-from timm.models._manipulate import checkpoint_seq, named_apply
+from timm.models._manipulate import named_apply, checkpoint_seq, adapt_input_conv
 
 __all__ = ['VisionTransformer']  # model_registry will add each entrypoint fn to this
 #import *을 수행할 경우 VisionTransformer만 외부에서 보이도록 제한

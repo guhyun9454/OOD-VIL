@@ -1,35 +1,29 @@
+import sys
 import argparse 
 import datetime
-import importlib
-import os
 import random
-import sys
-import time
-from pathlib import Path
-
 import numpy as np
+import time
 import torch
-import warnings
+import importlib
+
+
+from pathlib import Path
 
 from timm.scheduler import create_scheduler
 from timm.optim import create_optimizer
 
-# 로컬 임포트
-import models
-import utils
 from continual_datasets.build_incremental_scenario import build_continual_dataloader
-from continual_datasets.dataset_utils import (
-    UnknownWrapper, 
-    find_tasks_with_unseen_classes, 
-    get_dataset, 
-    get_ood_dataset, 
-    set_data_config
-)
+from continual_datasets.dataset_utils import set_data_config, get_ood_dataset, get_dataset, find_tasks_with_unseen_classes, UnknownWrapper
+import models #여기서 models.py의 @register_model이 실행되고, timm의 모델 레지스트리에 등록, create_model를 통해 custom vit가 호출됨
+import utils
+import os
 from utils import seed_everything
 
-# 경고 필터링
+import warnings
 warnings.filterwarnings('ignore', 'Argument interpolation should be of type InterpolationMode instead of int')
 warnings.filterwarnings("ignore","The given NumPy array is not writable, and PyTorch does not support non-writable tensors")
+
 
 def main(args):
     args = set_data_config(args)

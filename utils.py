@@ -11,18 +11,17 @@ Misc functions, including distributed helpers.
 
 Mostly copy-paste from torchvision references.
 """
-import datetime
 import io
 import os
-import random
 import time
 from collections import defaultdict, deque
-
-import matplotlib.pyplot as plt
+import datetime
 import numpy as np
-import seaborn as sns
+import random
 import torch
-import torch.distributed as dist
+import matplotlib.pyplot as plt
+import os
+import seaborn as sns
 
 def save_confusion_matrix_plot(confusion_matrix, labels, args):
     modified_labels = labels.copy()
@@ -68,6 +67,8 @@ def save_accuracy_heatmap(mat, task_id, args):
     plt.savefig(save_path)
     plt.close()
     print(f"Accuracy heatmap saved to {save_path}")
+
+import torch.distributed as dist
 
 class SmoothedValue(object):
     """Track a series of values and provide access to smoothed values over a

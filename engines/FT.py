@@ -1,16 +1,15 @@
-import datetime
 import os
-import time
-
-import numpy as np
 import torch
+import time
+import datetime
+import numpy as np
 import torch.nn.functional as F
-from sklearn.metrics import confusion_matrix, roc_auc_score
-from timm.models import create_model
 from timm.utils import accuracy
-
-from continual_datasets.dataset_utils import RandomSampleWrapper
+from timm.models import create_model
+from sklearn.metrics import roc_auc_score
+from sklearn.metrics import confusion_matrix
 from utils import save_accuracy_heatmap, save_anomaly_histogram, save_confusion_matrix_plot
+from continual_datasets.dataset_utils import RandomSampleWrapper  
 
 def load_model(args):
     model = create_model(
