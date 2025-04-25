@@ -1,25 +1,24 @@
-import math
-import sys
-import os
-import time
+import copy
 import datetime
 import json
-from typing import Iterable
+import math
+import os
+import sys
+import time
 from pathlib import Path
+from typing import Iterable
 
-import torch
 import numpy as np
-
-from timm.utils import accuracy
-from timm.optim import create_optimizer
-from timm.utils.model_ema import ModelEmaV2
-import copy
-import utils
+import torch
 import torch.nn.functional as F
 from sklearn.cluster import KMeans
+from sklearn.metrics import confusion_matrix, roc_auc_score
 from timm.models import create_model
+from timm.optim import create_optimizer
+from timm.utils import accuracy
+from timm.utils.model_ema import ModelEmaV2
 
-from sklearn.metrics import roc_auc_score, confusion_matrix
+import utils
 from continual_datasets.dataset_utils import RandomSampleWrapper
 from utils import save_accuracy_heatmap
 

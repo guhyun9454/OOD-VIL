@@ -1,13 +1,15 @@
-import torch
-import numpy as np
-import clip
-import ot  # POT 라이브러리 (pip install POT)
-from torch.utils.data import DataLoader
-from continual_datasets.dataset_utils import get_dataset, build_transform
 import argparse
-from tqdm import tqdm
-import timm
 from itertools import combinations
+
+import numpy as np
+import ot  # POT 라이브러리 (pip install POT)
+import timm
+import torch
+from torch.utils.data import DataLoader
+import clip
+from tqdm import tqdm
+
+from continual_datasets.dataset_utils import build_transform, get_dataset
 
 def compute_prototype_arrays(features, labels):
     unique_labels = np.unique(labels)
