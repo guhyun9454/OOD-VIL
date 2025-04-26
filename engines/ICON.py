@@ -497,6 +497,13 @@ class Engine():
                     'optimizer': optimizer.state_dict(),
                     'epoch': epoch,
                     'args': args,
+                    # 추가: head 관련 정보 저장
+                    'head_info': {
+                        'labels_in_head': self.labels_in_head.tolist(),
+                        'added_classes_in_cur_task': list(self.added_classes_in_cur_task),
+                        'head_timestamps': self.head_timestamps.tolist(),
+                        'num_classes': self.num_classes
+                    }
                 }
                 if args.sched is not None and args.sched != 'constant':
                     state_dict['lr_scheduler'] = lr_scheduler.state_dict()
@@ -507,7 +514,6 @@ class Engine():
             if args.save and utils.is_main_process():
                 with open(os.path.join(args.save, '{}_stats.txt'.format(datetime.datetime.now().strftime('log_%Y_%m_%d_%H_%M'))), 'a') as f:
                     f.write(json.dumps(log_stats) + '\n')
-
 
     def evaluate_ood(self, model, id_datasets, ood_dataset, device, args, task_id=None):
         model.eval()
@@ -615,10 +621,43 @@ class Engine():
         
         return results
 
+    def restore_head_from_checkpoint(self, model, checkpoint):
+        if 'head_info' in checkpoint:
+            head_info = checkpoint['head_info']
+            self.labels_in_head = np.array(head_info['labels_in_head'])
+            self.added_classes_in_cur_task = set(head_info['added_classes_in_cur_task'])
+            self.head_timestamps = np.array(head_info['head_timestamps'])
+            self.num_classes = head_info['num_classes']
+            
+            # 확장된 head를 가진 원본 모델과 동일한 크기의 새 head 생성
+            orig_head_size = model.head.weight.shape[0]
+            target_head_size = len(self.labels_in_head)
+            
+            if orig_head_size != target_head_size:
+                print(f"Adjusting head size from {orig_head_size} to {target_head_size} to match checkpoint")
+                in_features = model.head.in_features
+                new_head = torch.nn.Linear(in_features, target_head_size)
+                model.head = new_head
+                
+            return model
+        else:
+            print("Warning: No head information found in checkpoint. Loading model as is.")
+            return model
+            
+    def load_checkpoint(self, model, checkpoint_path):
+        if not os.path.exists(checkpoint_path):
+            raise ValueError(f'체크포인트를 찾을 수 없습니다: {checkpoint_path}')
+        
+        print(f'체크포인트를 로드합니다: {checkpoint_path}')
+        checkpoint = torch.load(checkpoint_path)
+        
+        # head 정보 복원
+        model = self.restore_head_from_checkpoint(model, checkpoint)
+        
+        # 모델 파라미터 로드
+        model.load_state_dict(checkpoint['model'])
 
-
-
-
+        return model
 
 def init_ICON_default_args(args):
     args.IC = True  #

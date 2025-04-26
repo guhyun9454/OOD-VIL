@@ -65,12 +65,8 @@ def main(args):
 
         for task_id in range(args.num_tasks):
             checkpoint_path = os.path.join(args.save, 'checkpoint/task{}_checkpoint.pth'.format(task_id+1))
-            if os.path.exists(checkpoint_path):
-                print('Loading checkpoint from:', checkpoint_path)
-                checkpoint = torch.load(checkpoint_path)
-                model.load_state_dict(checkpoint['model'])
-            else:
-                raise ValueError('No checkpoint found at:', checkpoint_path)
+            # 각 엔진에 맞는 체크포인트 로드 로직을 사용
+            model = engine.load_checkpoint(model, checkpoint_path)
             
             _ = engine.evaluate_till_now(model, data_loader, device, task_id, class_mask, acc_matrix, args = args)
             if args.ood_dataset and args.ood_eval:

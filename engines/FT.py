@@ -291,3 +291,14 @@ class Engine:
                 with open(checkpoint_path, 'wb') as f:
                     torch.save(checkpoint, f)
                 print(f"Saved checkpoint for task {task_id+1} at {checkpoint_path}")
+
+    def load_checkpoint(self, model, checkpoint_path):
+        if not os.path.exists(checkpoint_path):
+            raise ValueError(f'체크포인트를 찾을 수 없습니다: {checkpoint_path}')
+        
+        print(f'체크포인트를 로드합니다: {checkpoint_path}')
+        checkpoint = torch.load(checkpoint_path)
+        
+        model.load_state_dict(checkpoint['model'])
+
+        return model
