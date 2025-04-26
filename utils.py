@@ -23,10 +23,21 @@ import matplotlib.pyplot as plt
 import os
 import seaborn as sns
 
-def save_confusion_matrix_plot(confusion_matrix, labels, args):
+def save_confusion_matrix_plot(confusion_matrix, labels, args, task_id=None):
+    # Task 별 폴더 생성
+    task_folder = f"task{task_id+1}" if task_id is not None else "latest"
+    task_path = os.path.join(args.save, task_folder)
+    os.makedirs(task_path, exist_ok=True)
+    
+    # 파일명 생성 (task 정보 포함)
+    file_name = "confusion_matrix"
+    if task_id is not None:
+        file_name += f"_task{task_id+1}"
+    
+    save_path = os.path.join(task_path, f"{file_name}.png")
+    
     modified_labels = labels.copy()
     modified_labels[-1] = 'ood'
-    save_path = os.path.join(args.save, 'confusion_matrix.png')
     plt.figure(figsize=(16,12))
     sns.heatmap(confusion_matrix,
                 annot=False,
@@ -36,16 +47,41 @@ def save_confusion_matrix_plot(confusion_matrix, labels, args):
                 yticklabels=modified_labels)
     plt.xlabel('Predicted Label')
     plt.ylabel('True Label')
-    plt.title('Confusion Matrix')
+    
+    title = "Confusion Matrix"
+    if task_id is not None:
+        title += f" - Task {task_id+1}"
+    
+    plt.title(title)
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    plt.close()
     print(f"Confusion matrix saved to {save_path}")
 
-def save_anomaly_histogram(id_scores, ood_scores, args):
-    save_path = os.path.join(args.save, "ood_histogram.png")
+def save_anomaly_histogram(id_scores, ood_scores, args, suffix=None, task_id=None):
+    # Task 별 폴더 생성
+    task_folder = f"task{task_id+1}" if task_id is not None else "latest"
+    task_path = os.path.join(args.save, task_folder)
+    os.makedirs(task_path, exist_ok=True)
+    
+    # 파일명 생성 (task 정보 포함)
+    file_name = "ood_histogram"
+    if task_id is not None:
+        file_name += f"_task{task_id+1}"
+    if suffix:
+        file_name += f"_{suffix}"
+    
+    save_path = os.path.join(task_path, f"{file_name}.png")
     plt.figure(figsize=(16,12))
     plt.hist(id_scores, bins=30, color='red', alpha=0.6, label='Known (ID) samples')
     plt.hist(ood_scores, bins=30, color='blue', alpha=0.6, label='Unknown (OOD) samples')
-    plt.title("Anomaly Score Histogram")
+    
+    title = f"Anomaly Score Histogram"
+    if suffix:
+        title += f" ({suffix.upper()})"
+    if task_id is not None:
+        title += f" - Task {task_id+1}"
+    
+    plt.title(title)
     plt.xlabel("Anomaly Score")
     plt.ylabel("Frequency")
     plt.legend()
@@ -55,7 +91,12 @@ def save_anomaly_histogram(id_scores, ood_scores, args):
     print(f"Histogram saved to {save_path}")
 
 def save_accuracy_heatmap(mat, task_id, args):
-    save_path = os.path.join(args.save, f"accuracy_matrix_task{task_id+1}.png")
+    # Task 별 폴더 생성
+    task_folder = f"task{task_id+1}" if task_id is not None else "latest"
+    task_path = os.path.join(args.save, task_folder)
+    os.makedirs(task_path, exist_ok=True)
+    
+    save_path = os.path.join(task_path, f"accuracy_matrix_task{task_id+1}.png")
     plt.figure(figsize=(16,12))
     im = plt.imshow(mat, interpolation='nearest', cmap="Reds", vmin=0, vmax=100)
     plt.xlabel("Trained up to Task")

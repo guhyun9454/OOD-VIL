@@ -110,7 +110,7 @@ class Engine:
         print(f"Task {task_id+1}: Final Avg Loss = {avg_loss:.2f} | Final Avg Acc@1 = {avg_acc:.2f}")
         return avg_acc
 
-    def evaluate_ood(self, model, id_datasets, ood_dataset, device, args):
+    def evaluate_ood(self, model, id_datasets, ood_dataset, device, args, task_id=None):
         model.eval()
         
         # OOD detection method 선택 (MSP, ENERGY, KL 또는 ALL)
@@ -188,7 +188,7 @@ class Engine:
             
             # anomaly score 히스토그램 저장 (verbose 모드)
             if args.verbose:
-                save_anomaly_histogram(id_scores.cpu().numpy(), ood_scores.cpu().numpy(), args, suffix=method.lower())
+                save_anomaly_histogram(id_scores.cpu().numpy(), ood_scores.cpu().numpy(), args, suffix=method.lower(), task_id=task_id)
             
             all_scores = torch.cat([id_scores, ood_scores], dim=0).cpu().numpy()
             
@@ -268,7 +268,7 @@ class Engine:
                 # 현재 task까지의 ID 데이터셋만 사용
                 all_id_datasets = torch.utils.data.ConcatDataset([data_loader[t]['val'].dataset for t in range(task_id+1)])
                 ood_loader = data_loader[-1]['ood']
-                self.evaluate_ood(model, all_id_datasets, ood_loader, device, args)
+                self.evaluate_ood(model, all_id_datasets, ood_loader, device, args, task_id)
                 ood_duration = time.time() - ood_start
                 print(f"OOD evaluation after Task {task_id+1} completed in {str(datetime.timedelta(seconds=int(ood_duration)))}")
 

@@ -68,7 +68,7 @@ def main(args):
                 # 현재 태스크까지의 ID 데이터셋만 사용
                 all_id_datasets = torch.utils.data.ConcatDataset([data_loader[t]['val'].dataset for t in range(task_id+1)])
                 ood_loader = data_loader[-1]['ood']
-                engine.evaluate_ood(model, all_id_datasets, ood_loader, device, args)
+                engine.evaluate_ood(model, all_id_datasets, ood_loader, device, args, task_id)
                 ood_duration = time.time() - ood_start
                 print(f"Task {task_id+1} OOD evaluation completed in {str(datetime.timedelta(seconds=int(ood_duration)))}")
         return
