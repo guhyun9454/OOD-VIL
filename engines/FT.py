@@ -8,8 +8,9 @@ from timm.utils import accuracy
 from timm.models import create_model
 from sklearn.metrics import roc_auc_score
 from sklearn.metrics import confusion_matrix
-from utils import save_accuracy_heatmap, save_anomaly_histogram, save_confusion_matrix_plot
+from utils import save_accuracy_heatmap, save_anomaly_histogram, save_confusion_matrix_plot, save_logits_statistics
 from continual_datasets.dataset_utils import RandomSampleWrapper  
+import matplotlib.pyplot as plt
 
 def load_model(args):
     model = create_model(
@@ -141,7 +142,7 @@ class Engine:
         aligned_id_loader = torch.utils.data.DataLoader(id_dataset_aligned, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
         aligned_ood_loader = torch.utils.data.DataLoader(ood_dataset_aligned, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
         
-        # ID 및 OOD 데이터의 로짓 캐싱 (한 번만 forward 수행)
+        # ID 및 OOD 데이터의 로짓
         id_logits_list = []
         ood_logits_list = []
         
@@ -161,6 +162,10 @@ class Engine:
         # ID 및 OOD 데이터의 로짓 합치기
         id_logits = torch.cat(id_logits_list, dim=0)
         ood_logits = torch.cat(ood_logits_list, dim=0)
+        
+        # Logits 통계 시각화 및 저장
+        if args.save:
+            save_logits_statistics(id_logits, ood_logits, args, task_id if task_id is not None else 0)
         
         # binary_labels: 0 = OOD, 1 = ID
         binary_labels = np.concatenate([np.ones(id_logits.shape[0]),
@@ -271,7 +276,8 @@ class Engine:
                 self.evaluate_ood(model, all_id_datasets, ood_loader, device, args, task_id)
                 ood_duration = time.time() - ood_start
                 print(f"OOD evaluation after Task {task_id+1} completed in {str(datetime.timedelta(seconds=int(ood_duration)))}")
-
+                
+            # 추가: 일반 추론 시의 logits 통계 저장 - 제거
             if args.save:
                 checkpoint_dir = os.path.join(args.save, 'checkpoint')
                 os.makedirs(checkpoint_dir, exist_ok=True)
