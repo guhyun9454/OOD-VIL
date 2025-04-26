@@ -113,7 +113,7 @@ class Engine:
     def evaluate_ood(self, model, id_datasets, ood_dataset, device, args):
         model.eval()
         
-        # OOD detection method 선택 (MSP, ENERGY, KL)
+        # OOD detection method 선택 (MSP, ENERGY, KL 또는 ALL)
         ood_method = args.ood_method.upper()
         
         def MSP(logits):
@@ -125,15 +125,6 @@ class Engine:
         def KL(logits):
             uniform = torch.ones_like(logits) / logits.shape[-1]
             return F.cross_entropy(logits, uniform, reduction='none')
-        
-        if ood_method == "MSP":
-            infer_func = MSP
-        elif ood_method == "ENERGY":
-            infer_func = ENERGY
-        elif ood_method == "KL":
-            infer_func = KL
-        else:
-            raise ValueError(f"Unknown OOD detection method: {ood_method}")
         
         # 데이터셋 샘플 수 맞추기
         id_size = len(id_datasets)
@@ -150,50 +141,74 @@ class Engine:
         aligned_id_loader = torch.utils.data.DataLoader(id_dataset_aligned, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
         aligned_ood_loader = torch.utils.data.DataLoader(ood_dataset_aligned, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
         
-        # anomaly score 저장
-        id_anomaly_scores_list = []
-        ood_anomaly_scores_list = []
+        # ID 및 OOD 데이터의 로짓 캐싱 (한 번만 forward 수행)
+        id_logits_list = []
+        ood_logits_list = []
         
         with torch.no_grad():
             # ID 데이터 처리
             for inputs, _ in aligned_id_loader:
                 inputs = inputs.to(device)
                 logits = model(inputs)
-                scores = infer_func(logits)
-                id_anomaly_scores_list.append(scores)
+                id_logits_list.append(logits)
             
             # OOD 데이터 처리
             for inputs, _ in aligned_ood_loader:
                 inputs = inputs.to(device)
                 logits = model(inputs)
-                scores = infer_func(logits)
-                ood_anomaly_scores_list.append(scores)
+                ood_logits_list.append(logits)
         
-        # 텐서로 합치기 및 정규화 (전역 min-max)
-        id_anomaly_scores = torch.cat(id_anomaly_scores_list, dim=0)
-        ood_anomaly_scores = torch.cat(ood_anomaly_scores_list, dim=0)
-        # all_scores_tensor = torch.cat([id_anomaly_scores, ood_anomaly_scores], dim=0)
-        
-        # anomaly score 히스토그램 저장 (verbose 모드)
-        if args.verbose:
-            save_anomaly_histogram(id_anomaly_scores.cpu().numpy(), ood_anomaly_scores.cpu().numpy(), args)
+        # ID 및 OOD 데이터의 로짓 합치기
+        id_logits = torch.cat(id_logits_list, dim=0)
+        ood_logits = torch.cat(ood_logits_list, dim=0)
         
         # binary_labels: 0 = OOD, 1 = ID
-        binary_labels = np.concatenate([np.ones(id_anomaly_scores.shape[0]),
-                                        np.zeros(ood_anomaly_scores.shape[0])])
-        all_scores = torch.cat([id_anomaly_scores, ood_anomaly_scores], dim=0).cpu().numpy()
+        binary_labels = np.concatenate([np.ones(id_logits.shape[0]),
+                                       np.zeros(ood_logits.shape[0])])
         
-        # ROC 및 필요한 지표만 계산
-        from sklearn import metrics
-        fpr, tpr, _ = metrics.roc_curve(binary_labels, all_scores, drop_intermediate=False)
-        auroc = metrics.auc(fpr, tpr)
-        idx_tpr95 = np.abs(tpr - 0.95).argmin()
-        fpr_at_tpr95 = fpr[idx_tpr95]
+        # 실행할 방법들 결정
+        if ood_method == "ALL":
+            methods = ["MSP", "ENERGY", "KL"]
+        else:
+            methods = [ood_method]
         
-        print(f"[{ood_method}]: evaluating metrics...")
-        print(f"AUROC: {auroc * 100:.2f}%, FPR@TPR95: {fpr_at_tpr95 * 100:.2f}%")
+        results = {}
         
-        return all_scores, binary_labels
+        # 각 방법에 대해 평가 실행
+        for method in methods:
+            if method == "MSP":
+                id_scores = MSP(id_logits)
+                ood_scores = MSP(ood_logits)
+            elif method == "ENERGY":
+                id_scores = ENERGY(id_logits)
+                ood_scores = ENERGY(ood_logits)
+            elif method == "KL":
+                id_scores = KL(id_logits)
+                ood_scores = KL(ood_logits)
+            
+            # anomaly score 히스토그램 저장 (verbose 모드)
+            if args.verbose:
+                save_anomaly_histogram(id_scores.cpu().numpy(), ood_scores.cpu().numpy(), args, suffix=method.lower())
+            
+            all_scores = torch.cat([id_scores, ood_scores], dim=0).cpu().numpy()
+            
+            # ROC 및 필요한 지표만 계산
+            from sklearn import metrics
+            fpr, tpr, _ = metrics.roc_curve(binary_labels, all_scores, drop_intermediate=False)
+            auroc = metrics.auc(fpr, tpr)
+            idx_tpr95 = np.abs(tpr - 0.95).argmin()
+            fpr_at_tpr95 = fpr[idx_tpr95]
+            
+            print(f"[{method}]: evaluating metrics...")
+            print(f"AUROC: {auroc * 100:.2f}%, FPR@TPR95: {fpr_at_tpr95 * 100:.2f}%")
+            
+            results[method] = {
+                "auroc": auroc,
+                "fpr_at_tpr95": fpr_at_tpr95,
+                "scores": all_scores
+            }
+        
+        return results
     
     def evaluate_till_now(self, model, data_loader, device, task_id, class_mask, acc_matrix, args):
         """
