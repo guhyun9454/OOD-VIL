@@ -6,6 +6,8 @@ import numpy as np
 import time
 import torch
 import importlib
+import json
+import os
 
 
 from pathlib import Path
@@ -28,6 +30,15 @@ warnings.filterwarnings("ignore","The given NumPy array is not writable, and PyT
 def main(args):
     args = set_data_config(args)
     device = torch.device(args.device)
+
+    # args를 save 폴더에 저장
+    if args.save:
+        Path(args.save).mkdir(parents=True, exist_ok=True)
+        args_dict = vars(args)
+        args_path = os.path.join(args.save, 'args.json')
+        with open(args_path, 'w') as f:
+            json.dump(args_dict, f, indent=4)
+        print(f"Arguments saved to {args_path}")
 
     seed_everything(args.seed)
     
@@ -138,13 +149,11 @@ if __name__ == '__main__':
     parser.add_argument('--verbose', action='store_true', default=False)
 
     # ood evaluation
-    parser.add_argument('--ood_method', default='MSP', type=str, help='OOD detection method')
+    parser.add_argument('--ood_method', default='ALL', type=str, help='OOD detection method')
     parser.add_argument('--ood_dataset', default=None, type=str, help='OOD dataset name')
     parser.add_argument('--ood_eval', action='store_true', help='Perform ood evaluation only')
     args = parser.parse_args()
 
-    if args.save:
-        Path(args.save).mkdir(parents=True, exist_ok=True)
     Path(args.data_path).mkdir(parents=True, exist_ok=True)
     main(args)
 
