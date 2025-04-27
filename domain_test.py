@@ -10,6 +10,13 @@ import time  # 시간 측정을 위한 모듈 추가
 from continual_datasets.build_incremental_scenario import build_continual_dataloader
 from continual_datasets.dataset_utils import set_data_config
 
+def format_time(seconds):
+    """초 단위 시간을 시:분:초 형식으로 변환"""
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    seconds = int(seconds % 60)
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
 class FeatureExtractorWithHead(nn.Module):
     def __init__(self, feature_extractor, num_classes):
         super().__init__()
@@ -216,7 +223,7 @@ def main():
             train_loss, train_acc = train(model, train_loader, criterion, optimizer, device, args)
             epoch_end_time = time.time()
             epoch_time = epoch_end_time - epoch_start_time
-            print(f'Epoch {epoch+1}/{args.epochs}, Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.2f}%, 시간: {epoch_time:.2f}초')
+            print(f'Epoch {epoch+1}/{args.epochs}, Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.2f}%, 시간: {format_time(epoch_time)}')
         
         # 모든 도메인에 대해 평가
         print(f"\n{'-'*50}")
@@ -225,7 +232,7 @@ def main():
         
         for val_domain_idx in range(num_domains):
             if args.dataset == 'CORe50':
-                val_loader = dataloaders[val_domain_idx]['test']
+                val_loader = dataloaders[val_domain_idx]['train']
             else:
                 val_loader = dataloaders[val_domain_idx]['val']
             val_loss, val_acc = evaluate(model, val_loader, criterion, device)
@@ -238,7 +245,7 @@ def main():
         domain_end_time = time.time()
         domain_time = domain_end_time - domain_start_time
         domain_training_times.append(domain_time)
-        print(f"도메인 {train_domain_idx} ({domain_list[train_domain_idx]}) 학습 시간: {domain_time:.2f}초")
+        print(f"도메인 {train_domain_idx} ({domain_list[train_domain_idx]}) 학습 시간: {format_time(domain_time)}")
     
     # 전체 학습 종료 시간 및 총 소요 시간 계산
     total_end_time = time.time()
@@ -268,8 +275,8 @@ def main():
     print(f"시간 측정 결과:")
     print(f"{'='*50}")
     for i, domain_time in enumerate(domain_training_times):
-        print(f"도메인 {i} ({domain_list[i]}) 학습 시간: {domain_time:.2f}초")
-    print(f"총 학습 시간: {total_time:.2f}초 ({total_time/60:.2f}분)")
+        print(f"도메인 {i} ({domain_list[i]}) 학습 시간: {format_time(domain_time)}")
+    print(f"총 학습 시간: {format_time(total_time)}")
 
 if __name__ == '__main__':
     main() 
