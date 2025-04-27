@@ -159,7 +159,10 @@ def main():
         print(f"{'-'*50}")
         
         for val_domain_idx in range(num_domains):
-            val_loader = dataloaders[val_domain_idx]['val']
+            if args.dataset == 'CORe50':
+                val_loader = dataloaders[val_domain_idx]['test']
+            else:
+                val_loader = dataloaders[val_domain_idx]['val']
             val_loss, val_acc = evaluate(model, val_loader, criterion, device)
             
             accuracy_matrix[train_domain_idx, val_domain_idx] = val_acc
