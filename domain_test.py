@@ -42,6 +42,10 @@ def parse_args():
     parser.add_argument('--lr', type=float, default=0.001, help='학습률')
     parser.add_argument('--save_dir', type=str, default='./domain_test', help='결과 저장 디렉토리')
     
+    # 시각화 모드 관련 인자
+    parser.add_argument('--visualize_only', type=str, default='', help='.npy 파일 경로를 입력하면 시각화만 수행')
+    parser.add_argument('--domain_names', type=str, default='', help='시각화 시 사용할 도메인 이름 (콤마로 구분)')
+    
     args = parser.parse_args()
     return args
 
@@ -94,8 +98,69 @@ def evaluate(model, val_loader, criterion, device):
     val_acc = 100.0 * correct / total
     return val_loss, val_acc
 
+def visualize_accuracy_matrix(accuracy_matrix, domain_list, args):
+    """
+    정확도 매트릭스를 시각화하고 저장하는 함수
+    """
+    plt.figure(figsize=(10, 8))
+    plt.imshow(accuracy_matrix, cmap='Reds', interpolation='nearest', vmin=0, vmax=100)
+    plt.colorbar(label='Accuracy (%)')
+    plt.title(f'Domain Cross-Evaluation Accuracy Matrix - {args.dataset}')
+    plt.xlabel('Evaluation Domain')
+    plt.ylabel('Training Domain')
+    
+    # x축과 y축에 도메인 이름 표시
+    plt.xticks(np.arange(len(domain_list)), domain_list)
+    plt.yticks(np.arange(len(domain_list)), domain_list)
+    
+    # 각 셀에 정확도 값 표시
+    for i in range(len(domain_list)):
+        for j in range(len(domain_list)):
+            plt.text(j, i, f'{accuracy_matrix[i, j]:.1f}',
+                     ha='center', va='center', 
+                     color='white' if accuracy_matrix[i, j] < 70 else 'black')
+    
+    plt.tight_layout()
+    
+    # 결과 저장 디렉토리 확인 및 생성
+    os.makedirs(args.save_dir, exist_ok=True)
+    
+    # 파일 저장
+    save_path = os.path.join(args.save_dir, f'{args.dataset}.png')
+    plt.savefig(save_path)
+    print(f"시각화 결과가 {save_path}에 저장되었습니다.")
+    plt.show()
+
 def main():
     args = parse_args()
+    
+    # 시각화 모드인 경우
+    if args.visualize_only:
+        print(f".npy 파일에서 정확도 매트릭스를 로드하여 시각화합니다: {args.visualize_only}")
+        
+        # .npy 파일 로드
+        try:
+            accuracy_matrix = np.load(args.visualize_only)
+            print(f"정확도 매트릭스 로드 완료 (크기: {accuracy_matrix.shape})")
+            
+            # 도메인 이름 설정
+            if args.domain_names:
+                domain_list = args.domain_names.split(',')
+                if len(domain_list) != accuracy_matrix.shape[0]:
+                    print(f"경고: 도메인 이름 개수({len(domain_list)})가 매트릭스 크기({accuracy_matrix.shape[0]})와 일치하지 않습니다.")
+                    domain_list = [f"D{i}" for i in range(accuracy_matrix.shape[0])]
+            else:
+                # 도메인 이름이 없으면 기본값 사용
+                domain_list = [f"D{i}" for i in range(accuracy_matrix.shape[0])]
+            
+            # 정확도 매트릭스 시각화
+            visualize_accuracy_matrix(accuracy_matrix, domain_list, args)
+            return
+        except Exception as e:
+            print(f"오류: {e}")
+            return
+    
+    # 이 아래는 기존 학습 및 평가 코드
     set_data_config(args)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
@@ -180,27 +245,7 @@ def main():
     total_time = total_end_time - total_start_time
     
     # 결과 시각화 및 저장
-    plt.figure(figsize=(10, 8))
-    plt.imshow(accuracy_matrix, cmap='Reds', interpolation='nearest', vmin=0, vmax=100)
-    plt.colorbar(label='Accuracy (%)')
-    plt.title(f'Domain Cross-Evaluation Accuracy Matrix - {args.dataset}')
-    plt.xlabel('Evaluation Domain')
-    plt.ylabel('Training Domain')
-    
-    # x축과 y축에 도메인 이름 표시
-    plt.xticks(np.arange(num_domains), domain_list)
-    plt.yticks(np.arange(num_domains), domain_list)
-    
-    # 각 셀에 정확도 값 표시
-    for i in range(num_domains):
-        for j in range(num_domains):
-            plt.text(j, i, f'{accuracy_matrix[i, j]:.1f}',
-                     ha='center', va='center', 
-                     color='white' if accuracy_matrix[i, j] < 70 else 'black')
-    
-    plt.tight_layout()
-    plt.savefig(os.path.join(args.save_dir, f'{args.dataset}.png'))
-    plt.show()
+    visualize_accuracy_matrix(accuracy_matrix, domain_list, args)
     
     # 결과 저장
     np.save(os.path.join(args.save_dir, f'{args.dataset}_accuracy_matrix.npy'), accuracy_matrix)
