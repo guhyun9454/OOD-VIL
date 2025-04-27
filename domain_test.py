@@ -181,9 +181,9 @@ def main():
     
     # 결과 시각화 및 저장
     plt.figure(figsize=(10, 8))
-    plt.imshow(accuracy_matrix, cmap='viridis', interpolation='nearest')
+    plt.imshow(accuracy_matrix, cmap='Reds', interpolation='nearest', vmin=0, vmax=100)
     plt.colorbar(label='Accuracy (%)')
-    plt.title('Domain Cross-Evaluation Accuracy Matrix')
+    plt.title(f'Domain Cross-Evaluation Accuracy Matrix - {args.dataset}')
     plt.xlabel('Evaluation Domain')
     plt.ylabel('Training Domain')
     
@@ -199,11 +199,11 @@ def main():
                      color='white' if accuracy_matrix[i, j] < 70 else 'black')
     
     plt.tight_layout()
-    plt.savefig(os.path.join(args.save_dir, 'domain_accuracy_matrix.png'))
+    plt.savefig(os.path.join(args.save_dir, f'{args.dataset}.png'))
     plt.show()
     
     # 결과 저장
-    np.save(os.path.join(args.save_dir, 'domain_accuracy_matrix.npy'), accuracy_matrix)
+    np.save(os.path.join(args.save_dir, f'{args.dataset}_accuracy_matrix.npy'), accuracy_matrix)
     
     print(f"\n결과가 {args.save_dir} 디렉토리에 저장되었습니다.")
     
