@@ -6,6 +6,7 @@ import torch.nn as nn
 import torch.optim as optim
 import timm
 import matplotlib.pyplot as plt
+import time  # 시간 측정을 위한 모듈 추가
 from continual_datasets.build_incremental_scenario import build_continual_dataloader
 from continual_datasets.dataset_utils import set_data_config
 
@@ -110,6 +111,12 @@ def main():
     # 각 도메인별 결과를 저장할 매트릭스 초기화
     accuracy_matrix = np.zeros((num_domains, num_domains))
     
+    # 각 도메인 학습 시간을 저장할 리스트
+    domain_training_times = []
+    
+    # 전체 학습 시작 시간 기록
+    total_start_time = time.time()
+    
     # 특징 추출기 미리 로드 (모든 도메인에서 재사용)
     feature_extractor = timm.create_model(args.model, pretrained=True, num_classes=0)
     # 특징 추출기 freeze
@@ -122,6 +129,9 @@ def main():
         print(f"\n{'='*50}")
         print(f"도메인 {train_domain_idx} ({domain_list[train_domain_idx]}) 학습 시작")
         print(f"{'='*50}")
+        
+        # 도메인 학습 시작 시간 기록
+        domain_start_time = time.time()
         
         # 특징 추출기에 새 분류 헤드 연결
         num_classes = args.num_classes
@@ -137,8 +147,11 @@ def main():
         
         # 학습 시작
         for epoch in range(args.epochs):
+            epoch_start_time = time.time()
             train_loss, train_acc = train(model, train_loader, criterion, optimizer, device, args)
-            print(f'Epoch {epoch+1}/{args.epochs}, Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.2f}%')
+            epoch_end_time = time.time()
+            epoch_time = epoch_end_time - epoch_start_time
+            print(f'Epoch {epoch+1}/{args.epochs}, Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.2f}%, 시간: {epoch_time:.2f}초')
         
         # 모든 도메인에 대해 평가
         print(f"\n{'-'*50}")
@@ -152,6 +165,16 @@ def main():
             accuracy_matrix[train_domain_idx, val_domain_idx] = val_acc
             
             print(f"도메인 {val_domain_idx} ({domain_list[val_domain_idx]}) - Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.2f}%")
+        
+        # 도메인 학습 종료 시간 및 소요 시간 계산
+        domain_end_time = time.time()
+        domain_time = domain_end_time - domain_start_time
+        domain_training_times.append(domain_time)
+        print(f"도메인 {train_domain_idx} ({domain_list[train_domain_idx]}) 학습 시간: {domain_time:.2f}초")
+    
+    # 전체 학습 종료 시간 및 총 소요 시간 계산
+    total_end_time = time.time()
+    total_time = total_end_time - total_start_time
     
     # 결과 시각화 및 저장
     plt.figure(figsize=(10, 8))
@@ -191,6 +214,14 @@ def main():
     print(f"같은 도메인 평균 정확도: {diagonal_avg:.2f}%")
     print(f"다른 도메인 평균 정확도: {off_diagonal_avg:.2f}%")
     print(f"도메인 차이 (같은 도메인 - 다른 도메인): {diagonal_avg - off_diagonal_avg:.2f}%")
+    
+    # 시간 측정 결과 출력
+    print(f"\n{'='*50}")
+    print(f"시간 측정 결과:")
+    print(f"{'='*50}")
+    for i, domain_time in enumerate(domain_training_times):
+        print(f"도메인 {i} ({domain_list[i]}) 학습 시간: {domain_time:.2f}초")
+    print(f"총 학습 시간: {total_time:.2f}초 ({total_time/60:.2f}분)")
 
 if __name__ == '__main__':
     main() 
