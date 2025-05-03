@@ -97,11 +97,13 @@ def build_continual_dataloader(args):
             if args.dataset in ['CORe50']:
                 splited_dataset = [(dataset_train[i], dataset_val) for i in range(len(dataset_train))]
                 args.num_classes = len(dataset_val.classes)
-                class_mask = [list(dataset_val.classes) for i in range(args.num_tasks)]
+                # 문자열 대신 정수 인덱스(0부터 num_classes-1까지)로 생성
+                class_mask = [[j for j in range(args.num_classes)] for i in range(args.num_tasks)]
             else:
                 splited_dataset = [(dataset_train[i], dataset_val[i]) for i in range(len(dataset_train))]
                 args.num_classes = len(dataset_val[0].classes)
-                class_mask = [list(dataset_val[0].classes) for i in range(args.num_tasks)]
+                # 문자열 대신 정수 인덱스(0부터 num_classes-1까지)로 생성
+                class_mask = [[j for j in range(args.num_classes)] for i in range(args.num_tasks)]
     
     elif mode in ['joint']:
         if 'iDigits' in args.dataset:
