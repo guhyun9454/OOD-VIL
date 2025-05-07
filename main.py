@@ -31,9 +31,7 @@ def main(args):
     args = set_data_config(args)
     device = torch.device(args.device)
 
-    if args.wandb_run:
-        import wandb
-        wandb.init(project=args.wandb_project, name=args.wandb_run)
+
 
     # args를 save 폴더에 저장
     if args.save:
@@ -62,6 +60,10 @@ def main(args):
     engine = Engine(model=model, device=args.device, class_mask=class_mask, domain_list=domain_list, args=args)
     
     print(args)
+    if args.wandb_run and args.wandb_project:
+        import wandb
+        args.wandb = True
+        wandb.init(project=args.wandb_project, name=args.wandb_run, config=args)
     
     if args.eval or args.ood_eval:
         print(f"{'Evaluation Only':=^60}")
@@ -152,12 +154,12 @@ if __name__ == '__main__':
     parser.add_argument('--ood_method', default='ALL', type=str, help='OOD detection method')
     parser.add_argument('--ood_dataset', default=None, type=str, help='OOD dataset name')
     parser.add_argument('--ood_eval', action='store_true', help='Perform ood evaluation only')
-    args = parser.parse_args()
 
     #wandb
     parser.add_argument('--wandb_run', type=str, default=None, help='Wandb run name')
-    parser.add_argument('--wandb_project', type=str, default='OOD-VIL', help='Wandb project name')
+    parser.add_argument('--wandb_project', type=str, default=None, help='Wandb project name')
 
+    args = parser.parse_args()
     Path(args.data_path).mkdir(parents=True, exist_ok=True)
     main(args)
 

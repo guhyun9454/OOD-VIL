@@ -349,10 +349,17 @@ class Engine():
         A_avg = np.mean(A_i)
         
         result_str = "[Average accuracy till task{}] A_last: {:.2f} A_avg: {:.2f}".format(task_id+1, A_last, A_avg)
-        
+
+
         if task_id > 0:
             forgetting = np.mean((np.max(acc_matrix, axis=1) - acc_matrix[:, task_id])[:task_id])
             result_str += " Forgetting: {:.2f}".format(forgetting)
+        else:
+            forgetting = 0
+        
+        if args.wandb:
+            import wandb
+            wandb.log({"A_last (↑)": A_last, "A_avg (↑)": A_avg, "Forgetting (↓)": forgetting})
         
         print(result_str)
         if args.verbose:
@@ -612,7 +619,10 @@ class Engine():
             
             print(f"[{method}]: evaluating metrics...")
             print(f"AUROC: {auroc * 100:.2f}%, FPR@TPR95: {fpr_at_tpr95 * 100:.2f}%")
-            
+            if args.wandb:
+                import wandb
+                wandb.log({f"{method}_AUROC (↑)": auroc, f"{method}_FPR@TPR95 (↓)": fpr_at_tpr95})
+
             results[method] = {
                 "auroc": auroc,
                 "fpr_at_tpr95": fpr_at_tpr95,

@@ -8,6 +8,8 @@ save
 *.pth
 __pycache__/
 .cursor/
-test.py
+wandb/
+test*
+test/
 test.ipynb
 test.txt
