@@ -31,6 +31,10 @@ def main(args):
     args = set_data_config(args)
     device = torch.device(args.device)
 
+    if args.wandb_run:
+        import wandb
+        wandb.init(project=args.wandb_project, name=args.wandb_run)
+
     # args를 save 폴더에 저장
     if args.save:
         Path(args.save).mkdir(parents=True, exist_ok=True)
@@ -149,6 +153,10 @@ if __name__ == '__main__':
     parser.add_argument('--ood_dataset', default=None, type=str, help='OOD dataset name')
     parser.add_argument('--ood_eval', action='store_true', help='Perform ood evaluation only')
     args = parser.parse_args()
+
+    #wandb
+    parser.add_argument('--wandb_run', type=str, default=None, help='Wandb run name')
+    parser.add_argument('--wandb_project', type=str, default='OOD-VIL', help='Wandb project name')
 
     Path(args.data_path).mkdir(parents=True, exist_ok=True)
     main(args)
