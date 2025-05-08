@@ -107,6 +107,9 @@ def main(args):
 
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
+    if args.wandb:
+        import wandb
+        wandb.log({"Total Training Time": total_time_str})
     print(f"Total training time: {total_time_str}")
 
 if __name__ == '__main__':
