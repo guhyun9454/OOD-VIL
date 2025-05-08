@@ -1,7 +1,6 @@
 log/
 output
 save
-*.sh
 .vscode/
 .DS_Store
 *.pt
