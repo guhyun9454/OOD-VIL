@@ -62,8 +62,11 @@ def main(args):
     print(args)
     if args.wandb_run and args.wandb_project:
         import wandb
+        import getpass
+
         args.wandb = True
         wandb.init(project=args.wandb_project, name=args.wandb_run, config=args)
+        wandb.config.update({"username": getpass.getuser()})
     
     if args.eval or args.ood_eval:
         print(f"{'Evaluation Only':=^60}")
@@ -109,7 +112,7 @@ def main(args):
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     if args.wandb:
         import wandb
-        wandb.log({"Total Training Time": total_time_str})
+        wandb.config.update({"runtime": total_time_str})
     print(f"Total training time: {total_time_str}")
 
 if __name__ == '__main__':
