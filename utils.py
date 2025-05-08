@@ -109,6 +109,8 @@ def save_logits_statistics(id_logits, ood_logits, args, task_id):
     print(f"Std: {np.mean(ood_std):.4f}")
     print("="*50)
 
+    return os.path.join(args.save, 'logits_stats', f'task{task_id+1}_logits_distribution.png')
+
 def save_confusion_matrix_plot(confusion_matrix, labels, args, task_id=None):
     # Task 별 폴더 생성
     task_folder = f"task{task_id+1}" if task_id is not None else "latest"
@@ -143,57 +145,50 @@ def save_confusion_matrix_plot(confusion_matrix, labels, args, task_id=None):
     plt.close()
     print(f"Confusion matrix saved to {save_path}")
 
-def save_anomaly_histogram(id_scores, ood_scores, args, suffix=None, task_id=None):
-    # Task 별 폴더 생성
-    task_folder = f"task{task_id+1}" if task_id is not None else "latest"
-    task_path = os.path.join(args.save, task_folder)
-    os.makedirs(task_path, exist_ok=True)
+def save_anomaly_histogram(id_scores, ood_scores, args, suffix='', task_id=None):
+    plt.figure(figsize=(10, 6))
     
-    # 파일명 생성 (task 정보 포함)
-    file_name = "ood_histogram"
-    if task_id is not None:
-        file_name += f"_task{task_id+1}"
-    if suffix:
-        file_name += f"_{suffix}"
+    # 폴더 생성
+    save_dir = os.path.join(args.save, 'anomaly_histograms')
+    os.makedirs(save_dir, exist_ok=True)
     
-    save_path = os.path.join(task_path, f"{file_name}.png")
-    plt.figure(figsize=(16,12))
-    plt.hist(id_scores, bins=30, color='red', alpha=0.6, label='Known (ID) samples')
-    plt.hist(ood_scores, bins=30, color='blue', alpha=0.6, label='Unknown (OOD) samples')
+    # ID 및 OOD 점수 히스토그램 그리기
+    bins = np.linspace(min(np.min(id_scores), np.min(ood_scores)), 
+                      max(np.max(id_scores), np.max(ood_scores)), 100)
     
-    title = f"Anomaly Score Histogram"
-    if suffix:
-        title += f" ({suffix.upper()})"
-    if task_id is not None:
-        title += f" - Task {task_id+1}"
+    plt.hist(id_scores, bins=bins, alpha=0.5, label='ID', density=True)
+    plt.hist(ood_scores, bins=bins, alpha=0.5, label='OOD', density=True)
     
-    plt.title(title)
-    plt.xlabel("Anomaly Score")
-    plt.ylabel("Frequency")
+    plt.title(f'Anomaly Score Distribution ({suffix.upper()})')
+    plt.xlabel('Score')
+    plt.ylabel('Density')
     plt.legend()
-    plt.tight_layout()
-    plt.savefig(save_path)
-    plt.close()
-    print(f"Histogram saved to {save_path}")
-
-def save_accuracy_heatmap(mat, task_id, args):
-    # Task 별 폴더 생성
-    task_folder = f"task{task_id+1}" if task_id is not None else "latest"
-    task_path = os.path.join(args.save, task_folder)
-    os.makedirs(task_path, exist_ok=True)
     
-    save_path = os.path.join(task_path, f"accuracy_matrix_task{task_id+1}.png")
-    plt.figure(figsize=(16,12))
-    im = plt.imshow(mat, interpolation='nearest', cmap="Reds", vmin=0, vmax=100)
-    plt.xlabel("Trained up to Task")
-    plt.ylabel("Evaluated Task")
-    plt.colorbar(im, label="Accuracy")
-    plt.xticks(np.arange(mat.shape[1]))
-    plt.yticks(np.arange(mat.shape[0]))
-    plt.tight_layout()
+    task_str = f'_task{task_id+1}' if task_id is not None else ''
+    save_path = os.path.join(save_dir, f'anomaly_hist_{suffix}{task_str}.png')
     plt.savefig(save_path)
     plt.close()
-    print(f"Accuracy heatmap saved to {save_path}")
+    
+    return save_path
+
+def save_accuracy_heatmap(acc_matrix, task_id, args):
+    # 폴더 생성
+    save_dir = os.path.join(args.save, 'heatmaps')
+    os.makedirs(save_dir, exist_ok=True)
+    
+    fig, ax = plt.subplots(figsize=(10, 8))
+    sns.heatmap(acc_matrix, annot=True, cmap='YlGnBu', ax=ax, vmin=0, vmax=100)
+    
+    ax.set_title(f'Accuracy Heatmap (Task {task_id+1})')
+    ax.set_xlabel('After learning task')
+    ax.set_ylabel('Tested on task')
+    
+    # 저장 경로 설정
+    save_path = os.path.join(save_dir, f'heatmap_task{task_id+1}.png')
+    plt.savefig(save_path)
+    plt.close()
+    
+    return save_path
 
 import torch.distributed as dist
 

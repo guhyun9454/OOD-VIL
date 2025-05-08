@@ -359,13 +359,16 @@ class Engine():
         
         if args.wandb:
             import wandb
-            wandb.log({"A_last (↑)": A_last, "A_avg (↑)": A_avg, "Forgetting (↓)": forgetting})
+            wandb.log({"A_last (↑)": A_last, "A_avg (↑)": A_avg, "Forgetting (↓)": forgetting, "TASK": task_id})
         
         print(result_str)
-        if args.verbose:
+        if args.verbose or args.wandb:
             sub_matrix = acc_matrix[:task_id+1, :task_id+1]
             result = np.where(np.triu(np.ones_like(sub_matrix, dtype=bool)), sub_matrix, np.nan)
-            save_accuracy_heatmap(result, task_id, args)
+            heatmap_path = save_accuracy_heatmap(result, task_id, args)
+            if args.wandb:
+                import wandb
+                wandb.log({"Accuracy Heatmap": wandb.Image(heatmap_path)})
         
         return test_stats
 
@@ -578,7 +581,10 @@ class Engine():
         
         # Logits 통계 시각화 및 저장
         if args.save:
-            save_logits_statistics(id_logits, ood_logits, args, task_id if task_id is not None else 0)
+            stat_path = save_logits_statistics(id_logits, ood_logits, args, task_id if task_id is not None else 0)
+            if args.wandb:
+                import wandb
+                wandb.log({f"Logits Statistics TASK {task_id}": wandb.Image(stat_path)})
         
         # binary_labels: 0 = OOD, 1 = ID
         binary_labels = np.concatenate([np.ones(id_logits.shape[0]),
@@ -605,8 +611,11 @@ class Engine():
                 ood_scores = KL(ood_logits)
             
             # anomaly score 히스토그램 저장 (verbose 모드)
-            if args.verbose:
-                save_anomaly_histogram(id_scores.cpu().numpy(), ood_scores.cpu().numpy(), args, suffix=method.lower(), task_id=task_id)
+            if args.verbose or args.wandb:
+                hist_path = save_anomaly_histogram(id_scores.cpu().numpy(), ood_scores.cpu().numpy(), args, suffix=method.lower(), task_id=task_id)
+                if args.wandb:
+                    import wandb
+                    wandb.log({f"Anomaly Histogram TASK {task_id}": wandb.Image(hist_path)})
             
             all_scores = torch.cat([id_scores, ood_scores], dim=0).cpu().numpy()
             
@@ -621,7 +630,7 @@ class Engine():
             print(f"AUROC: {auroc * 100:.2f}%, FPR@TPR95: {fpr_at_tpr95 * 100:.2f}%")
             if args.wandb:
                 import wandb
-                wandb.log({f"{method}_AUROC (↑)": auroc, f"{method}_FPR@TPR95 (↓)": fpr_at_tpr95})
+                wandb.log({f"{method}_AUROC (↑)": auroc, f"{method}_FPR@TPR95 (↓)": fpr_at_tpr95, "TASK": task_id})
 
             results[method] = {
                 "auroc": auroc,
