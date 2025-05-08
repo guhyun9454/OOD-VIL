@@ -630,7 +630,7 @@ class Engine():
             print(f"AUROC: {auroc * 100:.2f}%, FPR@TPR95: {fpr_at_tpr95 * 100:.2f}%")
             if args.wandb:
                 import wandb
-                wandb.log({f"{method}_AUROC (↑)": auroc, f"{method}_FPR@TPR95 (↓)": fpr_at_tpr95, "TASK": task_id})
+                wandb.log({f"{method}_AUROC (↑)": auroc * 100, f"{method}_FPR@TPR95 (↓)": fpr_at_tpr95 * 100, "TASK": task_id})
 
             results[method] = {
                 "auroc": auroc,
