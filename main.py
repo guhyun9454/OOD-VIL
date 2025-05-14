@@ -65,7 +65,7 @@ def main(args):
         import getpass
 
         args.wandb = True
-        wandb.init(project=args.wandb_project, name=args.wandb_run, config=args)
+        wandb.init(entity="OODVIL",project=args.wandb_project, name=args.wandb_run, config=args)
         wandb.config.update({"username": getpass.getuser()})
     
     if args.eval or args.ood_eval:
