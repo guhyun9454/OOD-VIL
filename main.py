@@ -125,6 +125,7 @@ if __name__ == '__main__':
     parser.add_argument('--method', default='ICON', type=str, help='Engine type to use (e.g., ICON, FT)')
     parser.add_argument('--model', default=None, type=str, metavar='MODEL', help='Name of model to train')
     parser.add_argument('--pretrained', default=True, help='Load pretrained model or not')
+    parser.add_argument('--linear_probing', action='store_true', help='Enable linear probing mode (freeze backbone, only train classifier)')
 
 
     # Optimizer parameters
@@ -152,9 +153,9 @@ if __name__ == '__main__':
 
     # Misc (기타) parameters
     parser.add_argument('--print_freq', type=int, default=1000, help = 'The frequency of printing')
-    parser.add_argument('--develop_tasks', action='store_true', default=False)
-    parser.add_argument('--develop', action='store_true', default=False)
-    parser.add_argument('--verbose', action='store_true', default=False)
+    parser.add_argument('--develop_tasks', '-d', action='store_true', default=False)
+    parser.add_argument('--develop', '-dev', action='store_true', default=False)
+    parser.add_argument('--verbose', '-v', action='store_true', default=False)
 
     # ood evaluation
     parser.add_argument('--ood_method', default='ALL', type=str, help='OOD detection method')

@@ -18,6 +18,21 @@ def load_model(args):
         pretrained=args.pretrained,
         num_classes=args.num_classes,
     )
+    
+    # Linear probing 모드: backbone freeze, classifier만 학습
+    if args.linear_probing:
+        # 모든 파라미터를 freeze
+        for param in model.parameters():
+            param.requires_grad = False
+        
+        # classifier(head)만 학습 가능하게 설정
+        if hasattr(model, 'head') and model.head is not None:
+            for param in model.head.parameters():
+                param.requires_grad = True
+            print(f"Classifier layer만 학습 가능하게 설정되었습니다. (파라미터 수: {sum(p.numel() for p in model.head.parameters())})")
+        else:
+            print("Warning: 모델에 'head' 속성이 없거나 None입니다.")
+    
     return model
 
 class Engine:
@@ -287,6 +302,7 @@ class Engine:
                     'optimizer': optimizer.state_dict(),
                     'epoch': epoch,
                     'args': args,
+                    'linear_probing': args.linear_probing,
                 }
                 with open(checkpoint_path, 'wb') as f:
                     torch.save(checkpoint, f)
