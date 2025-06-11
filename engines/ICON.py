@@ -617,7 +617,7 @@ class Engine():
         id_labels = torch.cat(id_labels_list, dim=0).numpy()
         
         # t-SNE 시각화 생성
-        print(f"Creating t-SNE visualization for Task {task_id+1 if task_id is not None else 'current'}...")
+        print(f"Creating t-SNE visualization for Task {task_id if task_id is not None else 'current'}...")
         from utils import save_tsne_visualization
         tsne_path = save_tsne_visualization(id_features, ood_features, id_labels, args, task_id)
         

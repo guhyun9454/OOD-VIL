@@ -453,7 +453,7 @@ def save_tsne_visualization(id_features, ood_features, id_labels, args, task_id=
     
     # t-SNE 실행
     print(f"Running t-SNE for Task {task_id+1 if task_id is not None else 'current'}...")
-    tsne = TSNE(n_components=2, random_state=42, perplexity=30, n_iter=1000, verbose=2)
+    tsne = TSNE(n_components=2, random_state=42, perplexity=30, n_iter=1000)
     embeddings = tsne.fit_transform(all_features_scaled)
     
     # ID와 OOD 임베딩 분리
