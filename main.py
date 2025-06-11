@@ -60,6 +60,7 @@ def main(args):
     engine = Engine(model=model, device=args.device, class_mask=class_mask, domain_list=domain_list, args=args)
     
     print(args)
+    args.wandb = False
     if args.wandb_run and args.wandb_project:
         import wandb
         import getpass
@@ -153,8 +154,8 @@ if __name__ == '__main__':
 
     # Misc (기타) parameters
     parser.add_argument('--print_freq', type=int, default=1000, help = 'The frequency of printing')
-    parser.add_argument('--develop_tasks', '-d', action='store_true', default=False)
-    parser.add_argument('--develop', '-dev', action='store_true', default=False)
+    parser.add_argument('--develop_tasks', '-dt', action='store_true', default=False)
+    parser.add_argument('--develop', '-d', action='store_true', default=False)
     parser.add_argument('--verbose', '-v', action='store_true', default=False)
 
     # ood evaluation

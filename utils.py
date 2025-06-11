@@ -22,6 +22,8 @@ import torch
 import matplotlib.pyplot as plt
 import os
 import seaborn as sns
+from sklearn.manifold import TSNE
+from sklearn.preprocessing import StandardScaler
 
 def save_logits_statistics(id_logits, ood_logits, args, task_id):
     """
@@ -423,3 +425,71 @@ def seed_everything(seed: int = 42):
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
+
+def save_tsne_visualization(id_features, ood_features, id_labels, args, task_id=None):
+    """
+    ID와 OOD 데이터의 feature space를 t-SNE로 시각화하여 저장합니다.
+    
+    Args:
+        id_features: ID 데이터의 feature vectors (numpy array)
+        ood_features: OOD 데이터의 feature vectors (numpy array)
+        id_labels: ID 데이터의 클래스 라벨 (numpy array)
+        args: 설정 인자
+        task_id: 현재 태스크 ID
+    
+    Returns:
+        str: 저장된 이미지 파일 경로
+    """
+    # 폴더 생성
+    save_dir = os.path.join(args.save, 'tsne_visualizations')
+    os.makedirs(save_dir, exist_ok=True)
+    
+    # 데이터 결합
+    all_features = np.vstack([id_features, ood_features])
+    
+    # Feature normalization
+    scaler = StandardScaler()
+    all_features_scaled = scaler.fit_transform(all_features)
+    
+    # t-SNE 실행
+    print(f"Running t-SNE for Task {task_id+1 if task_id is not None else 'current'}...")
+    tsne = TSNE(n_components=2, random_state=42, perplexity=30, n_iter=1000, verbose=2)
+    embeddings = tsne.fit_transform(all_features_scaled)
+    
+    # ID와 OOD 임베딩 분리
+    id_embeddings = embeddings[:len(id_features)]
+    ood_embeddings = embeddings[len(id_features):]
+    
+    # 시각화
+    plt.figure(figsize=(12, 10))
+    
+    # tab10 컬러맵 사용
+    colors = plt.cm.tab10(np.linspace(0, 1, 10))
+    
+    # ID 데이터를 클래스별로 다른 색상으로 표시
+    unique_labels = np.unique(id_labels)
+    for i, label in enumerate(unique_labels):
+        mask = id_labels == label
+        color_idx = int(label) % 10  # tab10은 10개 색상
+        plt.scatter(id_embeddings[mask, 0], id_embeddings[mask, 1], 
+                   c=[colors[color_idx]], label=f'ID Class {label}', 
+                   alpha=0.7, s=30)
+    
+    # OOD 데이터를 검은색으로 표시
+    plt.scatter(ood_embeddings[:, 0], ood_embeddings[:, 1], 
+               c='black', label='OOD', alpha=0.7, s=30, marker='x')
+    
+    plt.title(f'Task {task_id+1 if task_id is not None else "Current"}: t-SNE Visualization of Feature Space')
+    plt.xlabel('t-SNE Dimension 1')
+    plt.ylabel('t-SNE Dimension 2')
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.tight_layout()
+    
+    # 저장
+    task_str = f'_task{task_id+1}' if task_id is not None else ''
+    save_path = os.path.join(save_dir, f'tsne_features{task_str}.png')
+    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    
+    print(f"t-SNE visualization saved to {save_path}")
+    return save_path

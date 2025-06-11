@@ -560,24 +560,70 @@ class Engine():
         id_logits_list = []
         ood_logits_list = []
         
+        # Feature extraction을 위한 추가 리스트들
+        id_features_list = []
+        ood_features_list = []
+        id_labels_list = []
+        
         with torch.no_grad():
             # ID 데이터 처리
-            for inputs, _ in aligned_id_loader:
+            for inputs, labels in aligned_id_loader:
                 inputs = inputs.to(device)
+                
+                # 기존 로직: logits 계산
                 outputs = model(inputs)
                 outputs, _, _ = self.get_max_label_logits(outputs, list(range(self.num_classes)), slice=True)
                 id_logits_list.append(outputs)
+                
+                # 추가 로직: feature extraction
+                features = model.forward_features(inputs)
+                # CLS token 사용 (Vision Transformer의 경우)
+                if hasattr(model, 'global_pool') and model.global_pool == 'avg':
+                    pooled_features = features[:, model.num_prefix_tokens:].mean(dim=1)
+                else:
+                    pooled_features = features[:, 0]  # CLS token
+                pooled_features = model.fc_norm(pooled_features)
+                
+                id_features_list.append(pooled_features.cpu())
+                id_labels_list.append(labels)
             
             # OOD 데이터 처리
             for inputs, _ in aligned_ood_loader:
                 inputs = inputs.to(device)
+                
+                # 기존 로직: logits 계산
                 outputs = model(inputs)
                 outputs, _, _ = self.get_max_label_logits(outputs, list(range(self.num_classes)), slice=True)
                 ood_logits_list.append(outputs)
+                
+                # 추가 로직: feature extraction
+                features = model.forward_features(inputs)
+                # CLS token 사용 (Vision Transformer의 경우)
+                if hasattr(model, 'global_pool') and model.global_pool == 'avg':
+                    pooled_features = features[:, model.num_prefix_tokens:].mean(dim=1)
+                else:
+                    pooled_features = features[:, 0]  # CLS token
+                pooled_features = model.fc_norm(pooled_features)
+                
+                ood_features_list.append(pooled_features.cpu())
         
         # ID 및 OOD 데이터의 로짓 합치기
         id_logits = torch.cat(id_logits_list, dim=0)
         ood_logits = torch.cat(ood_logits_list, dim=0)
+        
+        # 추가: Feature 합치기 및 t-SNE 시각화
+        id_features = torch.cat(id_features_list, dim=0).numpy()
+        ood_features = torch.cat(ood_features_list, dim=0).numpy()
+        id_labels = torch.cat(id_labels_list, dim=0).numpy()
+        
+        # t-SNE 시각화 생성
+        print(f"Creating t-SNE visualization for Task {task_id+1 if task_id is not None else 'current'}...")
+        from utils import save_tsne_visualization
+        tsne_path = save_tsne_visualization(id_features, ood_features, id_labels, args, task_id)
+        
+        if args.wandb:
+            import wandb
+            wandb.log({f"t-SNE Feature Space TASK {task_id}": wandb.Image(tsne_path)})
         
         # Logits 통계 시각화 및 저장
         if args.save:
