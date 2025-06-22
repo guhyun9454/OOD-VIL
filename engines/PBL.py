@@ -64,6 +64,15 @@ class Engine:
         
         self.use_wandb = args.wandb
         
+    def print_prototype_status(self, prefix=""):
+        if not self.prototypes:
+            print(f"{prefix}프로토타입 없음")
+            return
+        
+        total = sum(len(protos) for protos in self.prototypes.values())
+        class_counts = {cls: len(protos) for cls, protos in self.prototypes.items()}
+        print(f"{prefix}프로토타입 상태: 총 {total}개, 클래스별 = {class_counts}")
+        
     # --------------------------------------------------
     #   Private helpers
     # --------------------------------------------------
@@ -89,6 +98,7 @@ class Engine:
             center = feat.detach()
             radius = torch.tensor([tau], device=feat.device).detach()
             self.prototypes.setdefault(cls, []).append((center, radius))
+            print(f"새 프로토타입 생성: 클래스 {cls} (현재 {len(self.prototypes[cls])}개)")
             return center, radius
         else:
             # EMA update existing prototype
@@ -157,6 +167,9 @@ class Engine:
                 
         metric_logger.synchronize_between_processes()
         print("Averaged stats:", metric_logger)
+        
+        # 에포크 끝에 프로토타입 상태 출력
+        self.print_prototype_status(f"[Epoch {epoch+1} 완료] ")
 
     @torch.no_grad()
     def evaluate(self, data_loader):
@@ -235,6 +248,9 @@ class Engine:
             forgetting = 0.0
 
         print(f"[Average accuracy till task{task_id+1}] A_last: {A_last:.2f} A_avg: {A_avg:.2f} Forgetting: {forgetting:.2f}")
+
+        # Task 완료 후 프로토타입 상태 출력
+        self.print_prototype_status(f"[Task {task_id+1} 완료] ")
 
         # wandb 로깅
         if self.use_wandb:
