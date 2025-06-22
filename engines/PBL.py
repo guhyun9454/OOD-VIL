@@ -166,6 +166,7 @@ class Engine:
     #   Public API expected by main.py
     # --------------------------------------------------
     def train_and_evaluate(self, model, criterion, data_loader, optimizer, lr_scheduler, device, class_mask, args):
+        """Train sequential tasks and measure continual-learning & OOD metrics."""
         acc_matrix = np.zeros((args.num_tasks, args.num_tasks))
         for task_id in range(args.num_tasks):
             print(f"\n{'='*20}  Task {task_id+1}/{args.num_tasks}  {'='*20}")
@@ -173,17 +174,36 @@ class Engine:
                 self.train_one_epoch(criterion, data_loader[task_id]['train'], optimizer, epoch)
                 if lr_scheduler:
                     lr_scheduler.step(epoch)
-            # evaluate current and previous tasks
-            for i in range(task_id+1):
-                stats = self.evaluate(data_loader[i]['val'])
-                acc_matrix[i, task_id] = stats['Acc@1']
-            # simple feedback
-            A_last = acc_matrix[:task_id+1, task_id].mean()
-            print(f"[Average accuracy till task{task_id+1}] A_last: {A_last:.2f}")
 
-    def evaluate_till_now(self, *args, **kwargs):
-        # Kept for API compatibility – not used because train_and_evaluate already does so.
-        pass
+            # --- Classification evaluation (till now) ----------------
+            self.evaluate_till_now(model, data_loader, device, task_id, class_mask, acc_matrix, args)
+
+            # --- OOD evaluation --------------------------------------
+            if args.ood_dataset:
+                print(f"{'OOD Evaluation':=^60}")
+                # concat ID datasets up to current task
+                all_id = torch.utils.data.ConcatDataset([dl['val'].dataset for dl in data_loader[:task_id+1]])
+                ood_loader = data_loader[-1]['ood']
+                self.evaluate_ood(model, all_id, ood_loader, device, args, task_id)
+
+    def evaluate_till_now(self, model, data_loader, device, task_id, class_mask, acc_matrix, args):
+        """Evaluate all tasks up to current and print A_last, A_avg, Forgetting."""
+        for i in range(task_id + 1):
+            stats = self.evaluate(data_loader[i]['val'])
+            acc_matrix[i, task_id] = stats['Acc@1']
+
+        A_i = [np.mean(acc_matrix[:i+1, i]) for i in range(task_id+1)]
+        A_last = A_i[-1]
+        A_avg = np.mean(A_i)
+
+        if task_id > 0:
+            forgetting = np.mean((np.max(acc_matrix, axis=1) - acc_matrix[:, task_id])[:task_id])
+        else:
+            forgetting = 0.0
+
+        print(f"[Average accuracy till task{task_id+1}] A_last: {A_last:.2f} A_avg: {A_avg:.2f} Forgetting: {forgetting:.2f}")
+
+        return stats
 
     # checkpoint helpers -------------------------------------------------
     def restore_head_from_checkpoint(self, model, checkpoint):
@@ -199,28 +219,55 @@ class Engine:
         return model
 
     # -----------------  OOD evaluation (simple)  -----------------------
-    @torch.no_grad()
     def evaluate_ood(self, model, id_datasets, ood_loader, device, args, task_id=None):
+        """Compute OOD metrics (AUROC & FPR@95) using prototype-normalised distance score."""
         model.eval()
-        print("Running simple OOD evaluation (MSP)...")
-        id_loader = torch.utils.data.DataLoader(id_datasets, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
 
-        def gather_scores(d_loader):
-            scores = []
-            for x, _ in d_loader:
+        # Pre-gather prototype tensors for vectorised distance computation
+        centers, radii = [], []
+        for cls in self.prototypes:
+            for c, r in self.prototypes[cls]:
+                centers.append(c)
+                radii.append(r)
+        if len(centers) == 0:
+            print("[PBL] No prototypes available for OOD evaluation.")
+            return None
+
+        centers = torch.stack(centers).to(device)  # (N, D)
+        radii = torch.stack(radii).view(-1).to(device)  # (N,)
+
+        def ood_score(feats: torch.Tensor):
+            # feats: (B, D)  return score (B,)
+            dist_sq = torch.cdist(feats, centers, p=2) ** 2  # (B, N)
+            norm_dist = dist_sq / (radii ** 2).unsqueeze(0)
+            score, _ = torch.min(norm_dist, dim=1)
+            return score
+
+        def gather_scores(loader):
+            res = []
+            for x, _ in loader:
                 x = x.to(device, non_blocking=True)
-                logits = model(x)
-                softmax = F.softmax(logits, dim=1)
-                msp = -torch.max(softmax, dim=1)[0]  # negative max prob as OOD score
-                scores.append(msp.detach().cpu())
-            return torch.cat(scores)
+                with torch.no_grad():
+                    feats = model.forward_features(x)[:, 0]
+                res.append(ood_score(feats).cpu())
+            return torch.cat(res)
 
+        id_loader = torch.utils.data.DataLoader(id_datasets, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
         id_scores = gather_scores(id_loader)
         ood_scores = gather_scores(ood_loader)
+
         # AUROC
         from sklearn.metrics import roc_auc_score
         labels = np.concatenate([np.zeros(len(id_scores)), np.ones(len(ood_scores))])
         preds = np.concatenate([id_scores.numpy(), ood_scores.numpy()])
         auroc = roc_auc_score(labels, preds)
-        print(f"OOD AUROC: {auroc*100:.2f}%")
-        return auroc 
+
+        # FPR@95
+        id_scores_np = id_scores.numpy()
+        ood_scores_np = ood_scores.numpy()
+        threshold = np.percentile(id_scores_np, 95)  # 95% ID accepted (TPR=0.95)
+        fpr95 = np.mean(ood_scores_np <= threshold)
+
+        print(f"AUROC: {auroc*100:.2f}%  |  FPR95: {fpr95*100:.2f}%")
+
+        return auroc, fpr95 
