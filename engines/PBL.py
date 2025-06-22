@@ -9,6 +9,7 @@ from typing import Iterable, Dict, List, Tuple
 import torch
 import torch.nn.functional as F
 import numpy as np
+import wandb
 
 from timm.utils import accuracy
 from timm.models import create_model
@@ -60,6 +61,8 @@ class Engine:
         # Prototype container  ->  {class_idx: List[Tuple[center (Tensor), radius (Tensor)] ] }
         self.prototypes: Dict[int, List[Tuple[torch.Tensor, torch.Tensor]]] = {}
         self.ema_alpha = 0.9  # hard-coded EMA factor for prototype update
+        
+        self.use_wandb = getattr(args, 'wandb', False)
 
     # --------------------------------------------------
     #   Private helpers
@@ -195,6 +198,19 @@ class Engine:
             metric_logger.update(Loss=loss.item())
             metric_logger.meters['Acc@1'].update(acc1.item(), n=samples.shape[0])
             metric_logger.meters['Acc@5'].update(acc5.item(), n=samples.shape[0])
+            
+            # wandb 로깅
+            if self.use_wandb:
+                wandb.log({
+                    'train/loss': loss.item(),
+                    'train/ce_loss': ce_loss.item(),
+                    'train/compactness_loss': comp_loss.item(),
+                    'train/acc1': acc1.item(),
+                    'train/acc5': acc5.item(),
+                    'train/epoch': epoch,
+                    'train/num_prototypes': sum(len(protos) for protos in self.prototypes.values())
+                })
+                
         metric_logger.synchronize_between_processes()
         print("Averaged stats:", metric_logger)
 
@@ -218,6 +234,15 @@ class Engine:
             top1=metric_logger.meters['Acc@1'],
             top5=metric_logger.meters['Acc@5'],
             losses=metric_logger.meters['Loss']))
+            
+        # wandb 로깅
+        if self.use_wandb:
+            wandb.log({
+                'eval/loss': metric_logger.meters['Loss'].global_avg,
+                'eval/acc1': metric_logger.meters['Acc@1'].global_avg,
+                'eval/acc5': metric_logger.meters['Acc@5'].global_avg
+            })
+            
         return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
     # --------------------------------------------------
@@ -225,6 +250,7 @@ class Engine:
     # --------------------------------------------------
     def train_and_evaluate(self, model, criterion, data_loader, optimizer, lr_scheduler, device, class_mask, args):
         """Train sequential tasks and measure continual-learning & OOD metrics."""
+        
         acc_matrix = np.zeros((args.num_tasks, args.num_tasks))
         for task_id in range(args.num_tasks):
             print(f"\n{'='*20}  Task {task_id+1}/{args.num_tasks}  {'='*20}")
@@ -243,6 +269,8 @@ class Engine:
                 all_id = torch.utils.data.ConcatDataset([dl['val'].dataset for dl in data_loader[:task_id+1]])
                 ood_loader = data_loader[-1]['ood']
                 self.evaluate_ood(model, all_id, ood_loader, device, args, task_id)
+        
+        return acc_matrix
 
     def evaluate_till_now(self, model, data_loader, device, task_id, class_mask, acc_matrix, args):
         """Evaluate all tasks up to current and print A_last, A_avg, Forgetting."""
@@ -260,6 +288,20 @@ class Engine:
             forgetting = 0.0
 
         print(f"[Average accuracy till task{task_id+1}] A_last: {A_last:.2f} A_avg: {A_avg:.2f} Forgetting: {forgetting:.2f}")
+
+        # wandb 로깅
+        if self.use_wandb:
+            wandb.log({
+                f'continual_learning/A_last_task_{task_id+1}': A_last,
+                f'continual_learning/A_avg_task_{task_id+1}': A_avg,
+                f'continual_learning/Forgetting_task_{task_id+1}': forgetting,
+                'continual_learning/current_task': task_id + 1,
+                'continual_learning/num_prototypes_total': sum(len(protos) for protos in self.prototypes.values())
+            })
+            
+            # Task별 accuracy matrix 로깅
+            for i in range(task_id + 1):
+                wandb.log({f'task_accuracy/task_{i+1}_after_task_{task_id+1}': acc_matrix[i, task_id]})
 
         return stats
 
@@ -327,5 +369,15 @@ class Engine:
         fpr95 = np.mean(ood_scores_np <= threshold)
 
         print(f"AUROC: {auroc*100:.2f}%  |  FPR95: {fpr95*100:.2f}%")
+
+        # wandb 로깅
+        if self.use_wandb:
+            task_suffix = f"_task_{task_id+1}" if task_id is not None else ""
+            wandb.log({
+                f'ood/AUROC{task_suffix}': auroc * 100,
+                f'ood/FPR95{task_suffix}': fpr95 * 100,
+                f'ood/AUROC_raw{task_suffix}': auroc,
+                f'ood/FPR95_raw{task_suffix}': fpr95
+            })
 
         return auroc, fpr95 
