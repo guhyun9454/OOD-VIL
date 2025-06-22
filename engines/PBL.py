@@ -119,12 +119,13 @@ class Engine:
             samples = samples.to(self.device, non_blocking=True)
             targets = targets.to(self.device, non_blocking=True)
 
-            logits = self.model(samples)
-            ce_loss = criterion(logits, targets)
+            # 한 번의 forward 로 특징과 로짓을 모두 계산해 gradient 흐름을 유지
+            feats = self.model.forward_features(samples)  # (B, D)
+            if feats.dim() == 3:  # (B, N, D) 인 경우 CLS 토큰 사용
+                feats = feats[:, 0]
+            logits = self.model.forward_head(feats, pre_logits=False)
 
-            # feature extraction for PBL
-            with torch.no_grad():
-                feats = self.model.forward_features(samples)[:, 0]  # CLS token
+            ce_loss = criterion(logits, targets)
             comp_loss = self._compute_compactness_loss(feats, targets)
 
             loss = ce_loss + self.args.pbl_lambda_comp * comp_loss
