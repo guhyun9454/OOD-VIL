@@ -112,17 +112,44 @@ class Engine:
     #   Training / evaluation routines
     # --------------------------------------------------
     def _compute_compactness_loss(self, feats: torch.Tensor, targets: torch.Tensor):
-        """Vectorised compactness loss over a mini-batch."""
-        batch_loss = []
+        """Compactness loss (batch-level prototype update).
+
+        1) 배치에 등장한 각 클래스를 위한 평균 피처를 계산해 한 번만 프로토타입을 생성/업데이트합니다.
+        2) 업데이트된 프로토타입을 기준으로 각 샘플의 compactness 손실을 계산합니다.
+        """
+
         lambda_r = self.args.pbl_lambda_r
-        for f, y in zip(feats, targets):
-            center, radius = self._update_or_create_proto(int(y.item()), f)
-            dist_sq = self._euclidean_squared(f, center)
-            comp = (dist_sq / (radius ** 2)) + lambda_r * (radius ** 2)
-            batch_loss.append(comp)
-        if len(batch_loss) == 0:
+
+        # -------------------------------
+        # 1) 클래스별 평균 피처로 프로토타입 업데이트
+        # -------------------------------
+        unique_classes = torch.unique(targets)
+        proto_cache: Dict[int, Tuple[torch.Tensor, torch.Tensor]] = {}
+
+        for cls in unique_classes:
+            cls_int = int(cls.item())
+            cls_feats = feats[targets == cls]  # (N_c, D)
+            if cls_feats.numel() == 0:
+                continue  # 안전 장치
+            mean_feat = cls_feats.mean(dim=0)  # (D,)
+
+            # 한 번만 프로토타입 생성/업데이트
+            center, radius = self._update_or_create_proto(cls_int, mean_feat)
+            proto_cache[cls_int] = (center, radius)
+
+        if feats.size(0) == 0:
             return torch.tensor(0.0, device=self.device)
-        return torch.stack(batch_loss).mean()
+
+        # -------------------------------
+        # 2) 각 샘플에 대한 compactness 손실 계산
+        # -------------------------------
+        centers = torch.stack([proto_cache[int(y.item())][0] for y in targets])  # (B, D)
+        radii = torch.stack([proto_cache[int(y.item())][1] for y in targets]).view(-1)  # (B,)
+
+        dist_sq = torch.sum((feats - centers) ** 2, dim=1)  # (B,)
+        comp = dist_sq / (radii ** 2) + lambda_r * (radii ** 2)
+
+        return comp.mean()
 
     def train_one_epoch(self, criterion, data_loader, optimizer, epoch):
         self.model.train()
