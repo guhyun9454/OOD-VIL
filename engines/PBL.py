@@ -98,17 +98,74 @@ class Engine:
     #   Training / evaluation routines
     # --------------------------------------------------
     def _compute_compactness_loss(self, feats: torch.Tensor, targets: torch.Tensor):
-        """Vectorised compactness loss over a mini-batch."""
-        batch_loss = []
-        lambda_r = self.args.pbl_lambda_r
-        for f, y in zip(feats, targets):
-            center, radius = self._update_or_create_proto(int(y.item()), f)
-            dist_sq = self._euclidean_squared(f, center)
-            comp = (dist_sq / (radius ** 2)) + lambda_r * (radius ** 2)
-            batch_loss.append(comp)
-        if len(batch_loss) == 0:
+        """Compute compactness loss and *then* update prototypes in a mini-batch fashion.
+
+        Step-1:   For the current mini-batch, we compute the compactness loss *without* mutating any
+                 prototype – this guarantees that the loss term is invariant to the sample ordering
+                 inside the mini-batch.
+
+        Step-2:   Once the loss has been computed for every sample, we update / create prototypes
+                 using the aggregated statistics from the whole mini-batch. Existing prototypes are
+                 updated with an EMA towards the mean feature of the samples that were assigned to
+                 them; new prototypes are spawned for samples that exceed the splitting threshold
+                 τ_split.
+        """
+
+        if feats.numel() == 0:
             return torch.tensor(0.0, device=self.device)
-        return torch.stack(batch_loss).mean()
+
+        tau = self.args.pbl_tau_split
+        lambda_r = self.args.pbl_lambda_r
+
+        batch_loss: List[torch.Tensor] = []
+
+        # Containers for the *second-pass* prototype update ---------------------------------
+        #   1) "assignments" – existing prototype indices that each sample is mapped to.
+        #   2) "new_protos"   – list of (cls, feature) that should spawn a new prototype.
+        assignments: Dict[Tuple[int, int], List[torch.Tensor]] = {}
+        new_protos: List[Tuple[int, torch.Tensor]] = []
+
+        # ----- First pass: compute loss ----------------------------------------------------
+        for f, y in zip(feats, targets):
+            cls = int(y.item())
+
+            proto_idx, dist_sq, radius = self._find_nearest_prototype(cls, f)
+
+            # Decide whether to split or to use existing prototype
+            if (proto_idx is None) or (torch.sqrt(dist_sq) > tau):
+                # (Split)  – loss is computed w.r.t. a *virtual* prototype located at the sample
+                #            itself with radius = τ_split (distance is therefore 0).
+                radius = torch.tensor([tau], device=f.device)
+                comp = lambda_r * (radius ** 2)  # dist_sq == 0  ⇒ first term cancels out
+                batch_loss.append(comp)
+
+                # mark for creation in the second pass
+                new_protos.append((cls, f.detach()))
+            else:
+                # Use existing prototype – accumulate assignment for batch update later
+                comp = (dist_sq / (radius ** 2)) + lambda_r * (radius ** 2)
+                batch_loss.append(comp)
+
+                assignments.setdefault((cls, proto_idx), []).append(f.detach())
+
+        # Reduce loss across the mini-batch --------------------------------------------------
+        loss = torch.stack(batch_loss).mean() if batch_loss else torch.tensor(0.0, device=self.device)
+
+        # ----- Second pass: update prototypes ----------------------------------------------
+        # Update existing prototypes via EMA towards the *mean* of the assigned features.
+        for (cls, proto_idx), feat_list in assignments.items():
+            center, radius = self.prototypes[cls][proto_idx]
+            mean_feat = torch.stack(feat_list).mean(dim=0)
+            new_center = self.ema_alpha * center + (1.0 - self.ema_alpha) * mean_feat
+            self.prototypes[cls][proto_idx] = (new_center, radius)
+
+        # Create new prototypes that were scheduled for splitting.
+        for cls, feat in new_protos:
+            center = feat  # detached already
+            radius = torch.tensor([tau], device=feat.device)
+            self.prototypes.setdefault(cls, []).append((center, radius))
+
+        return loss
 
     def train_one_epoch(self, criterion, data_loader, optimizer, epoch):
         self.model.train()
