@@ -14,6 +14,7 @@ import wandb
 from timm.utils import accuracy
 from timm.models import create_model
 import utils
+from utils import save_accuracy_heatmap, save_anomaly_histogram
 
 
 # -----------------------------
@@ -252,20 +253,20 @@ class Engine:
         # Task 완료 후 프로토타입 상태 출력
         self.print_prototype_status(f"[Task {task_id+1} 완료] ")
 
-        # wandb 로깅
-        if self.use_wandb:
-            wandb.log({
-                'TASK': task_id,
-                f'continual_learning/A_last': A_last,
-                f'continual_learning/A_avg': A_avg,
-                f'continual_learning/Forgetting': forgetting,
-                'continual_learning/num_prototypes_total': sum(len(protos) for protos in self.prototypes.values())
-            })
-            
-            # Task별 accuracy matrix 로깅
-            for i in range(task_id + 1):
-                wandb.log({f'task_accuracy/task_{i+1}_after_task_{task_id+1}': acc_matrix[i, task_id]})
-
+        # ICON과 동일한 형식으로 wandb 로깅
+        if args.wandb:
+            import wandb
+            wandb.log({"A_last (↑)": A_last, "A_avg (↑)": A_avg, "Forgetting (↓)": forgetting, "TASK": task_id})
+        
+        # 정확도 히트맵 생성 및 로깅
+        if args.verbose or args.wandb:
+            sub_matrix = acc_matrix[:task_id+1, :task_id+1]
+            result = np.where(np.triu(np.ones_like(sub_matrix, dtype=bool)), sub_matrix, np.nan)
+            heatmap_path = save_accuracy_heatmap(result, task_id, args)
+            if args.wandb:
+                import wandb
+                wandb.log({"Accuracy Heatmap": wandb.Image(heatmap_path)})
+        
         return stats
 
     # checkpoint helpers -------------------------------------------------
@@ -285,6 +286,14 @@ class Engine:
     def evaluate_ood(self, model, id_datasets, ood_loader, device, args, task_id=None):
         """Compute OOD metrics (AUROC & FPR@95) using prototype-normalised distance score."""
         model.eval()
+
+        ood_loader = torch.utils.data.DataLoader(
+            ood_loader,
+            batch_size=args.batch_size,
+            shuffle=False,
+            num_workers=args.num_workers,
+            pin_memory=True
+        )
 
         # Pre-gather prototype tensors for vectorised distance computation
         centers, radii = [], []
@@ -311,11 +320,9 @@ class Engine:
             for x, _ in loader:
                 x = x.to(device, non_blocking=True)
                 
-                # 텐서 차원 확인 및 조정
-                if x.dim() == 3:  # (C, H, W) 형태인 경우
+                # 배치 차원이 없는 경우에만 차원 추가
+                if x.dim() == 3:  # (C, H, W) 형태인 경우에만
                     x = x.unsqueeze(0)  # (1, C, H, W)로 배치 차원 추가
-                    print(x.shape)
-
                 
                 with torch.no_grad():
                     feats = model.forward_features(x)[:, 0]
@@ -351,12 +358,16 @@ class Engine:
 
         print(f"AUROC (↑) : {auroc*100:.2f}%  |  FPR95 (↓) : {fpr95*100:.2f}%")
 
-        # wandb 로깅
-        if self.use_wandb:
-            wandb.log({
-                'TASK': task_id,
-                f'ood/AUROC (↑)': auroc * 100,
-                f'ood/FPR95 (↓)': fpr95 * 100,
-            })
+        # 이상 점수 히스토그램 저장 (verbose 모드 또는 wandb 사용 시)
+        if args.verbose or args.wandb:
+            hist_path = save_anomaly_histogram(id_scores_np, ood_scores_np, args, suffix='PBL', task_id=task_id)
+            if args.wandb:
+                import wandb
+                wandb.log({f"Anomaly Histogram TASK {task_id}": wandb.Image(hist_path)})
+
+        # ICON과 동일한 형식으로 wandb 로깅
+        if args.wandb:
+            import wandb
+            wandb.log({f"PBL_AUROC (↑)": auroc * 100, f"PBL_FPR@TPR95 (↓)": fpr95 * 100, "TASK": task_id})
 
         return auroc, fpr95 
