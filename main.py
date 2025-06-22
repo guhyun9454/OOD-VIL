@@ -57,9 +57,8 @@ def main(args):
     Engine = engine_module.Engine
     model = engine_module.load_model(args)
     model.to(args.device)
-    engine = Engine(model=model, device=args.device, class_mask=class_mask, domain_list=domain_list, args=args)
     
-    print(args)
+    # wandb 설정을 Engine 초기화보다 먼저 실행
     if args.wandb_run and args.wandb_project:
         import wandb
         import getpass
@@ -67,7 +66,13 @@ def main(args):
         args.wandb = True
         wandb.init(entity="OODVIL",project=args.wandb_project, name=args.wandb_run, config=args)
         wandb.config.update({"username": getpass.getuser()})
+    else:
+        args.wandb = False
     
+    engine = Engine(model=model, device=args.device, class_mask=class_mask, domain_list=domain_list, args=args)
+    
+    print(args)
+
     if args.eval or args.ood_eval:
         print(f"{'Evaluation Only':=^60}")
         acc_matrix = np.zeros((args.num_tasks, args.num_tasks))
