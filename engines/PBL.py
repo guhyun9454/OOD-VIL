@@ -118,7 +118,10 @@ class Engine:
         metric_logger = utils.MetricLogger(delimiter="  ")
         header = f"PBL Train: Epoch[{epoch+1}/{self.args.epochs}]"
 
-        for samples, targets in metric_logger.log_every(data_loader, self.args.print_freq, header):
+        for batch_idx, (samples, targets) in enumerate(metric_logger.log_every(data_loader, self.args.print_freq, header)):
+            if self.args.develop and batch_idx > 20:
+                break
+                    
             samples = samples.to(self.device, non_blocking=True)
             targets = targets.to(self.device, non_blocking=True)
 
@@ -161,7 +164,10 @@ class Engine:
         criterion = torch.nn.CrossEntropyLoss()
         metric_logger = utils.MetricLogger(delimiter="  ")
         header = "PBL Eval:"
-        for samples, targets in metric_logger.log_every(data_loader, self.args.print_freq, header):
+        for batch_idx, (samples, targets) in enumerate(metric_logger.log_every(data_loader, self.args.print_freq, header)):
+            if self.args.develop and batch_idx > 20:
+                break
+                    
             samples = samples.to(self.device, non_blocking=True)
             targets = targets.to(self.device, non_blocking=True)
             logits = self.model(samples)
@@ -299,6 +305,17 @@ class Engine:
                     feats = model.forward_features(x)[:, 0]
                 res.append(ood_score(feats).cpu())
             return torch.cat(res)
+
+        # develop 모드일 때 샘플 수 제한
+        if args.develop:
+            min_size = 1000
+            if len(id_datasets) > min_size:
+                indices = torch.randperm(len(id_datasets))[:min_size]
+                id_datasets = torch.utils.data.Subset(id_datasets, indices)
+            if len(ood_loader.dataset) > min_size:
+                indices = torch.randperm(len(ood_loader.dataset))[:min_size] 
+                ood_subset = torch.utils.data.Subset(ood_loader.dataset, indices)
+                ood_loader = torch.utils.data.DataLoader(ood_subset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
 
         id_loader = torch.utils.data.DataLoader(id_datasets, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
         id_scores = gather_scores(id_loader)
