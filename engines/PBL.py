@@ -125,9 +125,8 @@ class Engine:
             logits = self.model(samples)
             ce_loss = criterion(logits, targets)
 
-            # feature extraction for PBL
-            with torch.no_grad():
-                feats = self.model.forward_features(samples)[:, 0]  # CLS token
+            # feature extraction for PBL (allow gradients to flow)
+            feats = self.model.forward_features(samples)[:, 0]  # CLS token
             comp_loss = self._compute_compactness_loss(feats, targets)
 
             loss = ce_loss + self.args.pbl_lambda_comp * comp_loss
