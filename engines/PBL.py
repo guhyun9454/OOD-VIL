@@ -62,8 +62,8 @@ class Engine:
         self.prototypes: Dict[int, List[Tuple[torch.Tensor, torch.Tensor]]] = {}
         self.ema_alpha = 0.9  # hard-coded EMA factor for prototype update
         
-        self.use_wandb = getattr(args, 'wandb', False)
-
+        self.use_wandb = args.wandb
+        
     # --------------------------------------------------
     #   Private helpers
     # --------------------------------------------------
@@ -239,10 +239,10 @@ class Engine:
         # wandb 로깅
         if self.use_wandb:
             wandb.log({
-                f'continual_learning/A_last_task_{task_id+1}': A_last,
-                f'continual_learning/A_avg_task_{task_id+1}': A_avg,
-                f'continual_learning/Forgetting_task_{task_id+1}': forgetting,
-                'continual_learning/current_task': task_id + 1,
+                'TASK': task_id,
+                f'continual_learning/A_last': A_last,
+                f'continual_learning/A_avg': A_avg,
+                f'continual_learning/Forgetting': forgetting,
                 'continual_learning/num_prototypes_total': sum(len(protos) for protos in self.prototypes.values())
             })
             
@@ -333,16 +333,14 @@ class Engine:
         threshold = np.percentile(id_scores_np, 95)  # 95% ID accepted (TPR=0.95)
         fpr95 = np.mean(ood_scores_np <= threshold)
 
-        print(f"AUROC: {auroc*100:.2f}%  |  FPR95: {fpr95*100:.2f}%")
+        print(f"AUROC (↑) : {auroc*100:.2f}%  |  FPR95 (↓) : {fpr95*100:.2f}%")
 
         # wandb 로깅
         if self.use_wandb:
-            task_suffix = f"_task_{task_id+1}" if task_id is not None else ""
             wandb.log({
-                f'ood/AUROC{task_suffix}': auroc * 100,
-                f'ood/FPR95{task_suffix}': fpr95 * 100,
-                f'ood/AUROC_raw{task_suffix}': auroc,
-                f'ood/FPR95_raw{task_suffix}': fpr95
+                'TASK': task_id,
+                f'ood/AUROC (↑)': auroc * 100,
+                f'ood/FPR95 (↓)': fpr95 * 100,
             })
 
         return auroc, fpr95 
