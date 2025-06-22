@@ -313,6 +313,13 @@ class Engine:
             res = []
             for x, _ in loader:
                 x = x.to(device, non_blocking=True)
+                
+                # 텐서 차원 확인 및 조정
+                if x.dim() == 3:  # (C, H, W) 형태인 경우
+                    x = x.unsqueeze(0)  # (1, C, H, W)로 배치 차원 추가
+                    print(x.shape)
+
+                
                 with torch.no_grad():
                     feats = model.forward_features(x)[:, 0]
                 res.append(ood_score(feats).cpu())
