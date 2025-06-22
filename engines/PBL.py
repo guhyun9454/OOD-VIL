@@ -75,7 +75,9 @@ class Engine:
         """Return (proto_idx, distance, radius). If no proto exists, returns (None, inf, None)"""
         if cls not in self.prototypes or len(self.prototypes[cls]) == 0:
             return None, torch.tensor(float('inf'), device=feat.device), None
-        dists = torch.stack([self._euclidean_squared(feat, c) for c, _ in self.prototypes[cls]])
+        # detach prototypes to avoid gradient accumulation
+        with torch.no_grad():
+            dists = torch.stack([self._euclidean_squared(feat.detach(), c.detach()) for c, _ in self.prototypes[cls]])
         min_idx = torch.argmin(dists)
         center, radius = self.prototypes[cls][min_idx]
         return min_idx, dists[min_idx], radius
@@ -93,7 +95,8 @@ class Engine:
         else:
             # EMA update existing prototype
             center, radius = self.prototypes[cls][proto_idx]
-            new_center = self.ema_alpha * center + (1 - self.ema_alpha) * feat.detach()
+            with torch.no_grad():  # gradient 차단
+                new_center = self.ema_alpha * center.detach() + (1 - self.ema_alpha) * feat.detach()
             self.prototypes[cls][proto_idx] = (new_center, radius)
             return new_center, radius
 
@@ -104,13 +107,25 @@ class Engine:
         """Vectorised compactness loss over a mini-batch."""
         batch_loss = []
         lambda_r = self.args.pbl_lambda_r
+        
+        # detach features for prototype update
+        with torch.no_grad():
+            for f, y in zip(feats, targets):
+                self._update_or_create_proto(int(y.item()), f.detach())
+        
+        # compute loss with gradient
         for f, y in zip(feats, targets):
-            center, radius = self._update_or_create_proto(int(y.item()), f)
-            dist_sq = self._euclidean_squared(f, center)
-            comp = (dist_sq / (radius ** 2)) + lambda_r * (radius ** 2)
-            batch_loss.append(comp)
+            cls = int(y.item())
+            # find nearest prototype for gradient computation
+            proto_idx, _, _ = self._find_nearest_prototype(cls, f)
+            if proto_idx is not None:
+                center, radius = self.prototypes[cls][proto_idx]
+                dist_sq = self._euclidean_squared(f, center.detach())  # detach center
+                comp = (dist_sq / (radius.detach() ** 2)) + lambda_r * (radius.detach() ** 2)
+                batch_loss.append(comp)
+        
         if len(batch_loss) == 0:
-            return torch.tensor(0.0, device=self.device)
+            return torch.tensor(0.0, device=self.device, requires_grad=True)
         return torch.stack(batch_loss).mean()
 
     def train_one_epoch(self, criterion, data_loader, optimizer, epoch):
@@ -134,6 +149,9 @@ class Engine:
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+            
+            # Clear intermediate tensors
+            del feats, logits  # 명시적으로 메모리 해제
 
             acc1, acc5 = accuracy(logits, targets, topk=(1, 5))
             metric_logger.update(Loss=loss.item())
@@ -151,9 +169,16 @@ class Engine:
                     'train/epoch': epoch,
                     'train/num_prototypes': sum(len(protos) for protos in self.prototypes.values())
                 })
+            
+            # 주기적으로 GPU 캐시 정리 (매 100 iteration마다)
+            if hasattr(metric_logger, 'iter') and metric_logger.iter % 100 == 0:
+                torch.cuda.empty_cache()
                 
         metric_logger.synchronize_between_processes()
         print("Averaged stats:", metric_logger)
+        
+        # Epoch 끝에서 GPU 캐시 정리
+        torch.cuda.empty_cache()
 
     @torch.no_grad()
     def evaluate(self, data_loader):
