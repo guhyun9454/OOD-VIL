@@ -35,7 +35,12 @@ class Engine(IconEngine):
     # ------------ 프로토타입 관리 유틸리티 --------------
     def _init_prototype(self, feature):
         center = feature.detach().clone()
-        radius = torch.tensor(1.0, device=feature.device, requires_grad=True)
+        # learnable radius parameter
+        radius = torch.nn.Parameter(torch.tensor(1.0, device=feature.device))
+        # 모든 radius 파라미터를 추적하여 별도 최적화
+        if not hasattr(self, 'radius_params'):
+            self.radius_params = torch.nn.ParameterList()
+        self.radius_params.append(radius)
         return [center, radius]
 
     def _update_prototype(self, proto, feature):
@@ -96,6 +101,13 @@ class Engine(IconEngine):
             total_loss.backward()
             optimizer.step()
 
+            # --- radius 파라미터 업데이트 (simple SGD) ---
+            if hasattr(self, 'radius_params') and self.radius_params:
+                for r in self.radius_params:
+                    if r.grad is not None:
+                        r.data -= args.lr * r.grad  # 동일 learning rate 사용
+                        r.grad = None
+
             metric_logger.update(Loss=total_loss.item())
             metric_logger.update(Lr=optimizer.param_groups[0]["lr"])
             acc1, acc5 = accuracy(outputs, targets, topk=(1, 5))
@@ -117,4 +129,35 @@ class Engine(IconEngine):
                     min_score = score
         return min_score
 
-    # TODO: evaluate_ood를 PBL 방식으로 재정의 가능 
+    # ------------- OOD 평가 --------------
+    @torch.no_grad()
+    def evaluate_ood(self, model, id_datasets, ood_dataset, device, args, task_id=None):
+        """PBL 방식(OOD score = min(dist/r))으로 AUROC 계산"""
+        from sklearn.metrics import roc_auc_score
+        model.eval()
+
+        # helper to get features & scores
+        def _get_scores(dataloader):
+            scores = []
+            for imgs, _ in dataloader:
+                imgs = imgs.to(device, non_blocking=True)
+                feats = model.forward_features(imgs)[:, 0]
+                for f in feats:
+                    scores.append(self.compute_ood_score(f))
+            return scores
+
+        id_loader = torch.utils.data.DataLoader(id_datasets, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
+        ood_loader = ood_dataset  # 이미 DataLoader 형태라고 가정
+
+        id_scores = _get_scores(id_loader)
+        ood_scores = _get_scores(ood_loader)
+
+        labels = np.concatenate([np.zeros(len(id_scores)), np.ones(len(ood_scores))])
+        scores = np.concatenate([id_scores, ood_scores])
+        auroc = roc_auc_score(labels, -scores)  # score 낮을수록 ID
+
+        print(f"[PBL-OOD] AUROC: {auroc*100:.2f}% (Task {task_id+1 if task_id is not None else '-'})")
+        if args.wandb:
+            import wandb
+            wandb.log({"OOD_AUROC": auroc, "TASK": task_id})
+        return auroc 
