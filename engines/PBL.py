@@ -140,14 +140,22 @@ class Engine(IconEngine):
         def _get_scores(dataloader):
             scores = []
             for imgs, _ in dataloader:
+                # dataloader가 단일 샘플을 반환할 경우 배치 차원 추가
+                if imgs.dim() == 3:
+                    imgs = imgs.unsqueeze(0)
                 imgs = imgs.to(device, non_blocking=True)
                 feats = model.forward_features(imgs)[:, 0]
                 for f in feats:
                     scores.append(self.compute_ood_score(f))
             return scores
 
-        id_loader = torch.utils.data.DataLoader(id_datasets, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
-        ood_loader = ood_dataset  # 이미 DataLoader 형태라고 가정
+        id_loader = id_datasets if isinstance(id_datasets, torch.utils.data.DataLoader) else \
+            torch.utils.data.DataLoader(id_datasets, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
+
+        if isinstance(ood_dataset, torch.utils.data.DataLoader):
+            ood_loader = ood_dataset
+        else:
+            ood_loader = torch.utils.data.DataLoader(ood_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
 
         id_scores = _get_scores(id_loader)
         ood_scores = _get_scores(ood_loader)
