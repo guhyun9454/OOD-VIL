@@ -173,12 +173,25 @@ class Engine(IconEngine):
         id_scores = _get_scores(id_loader)
         ood_scores = _get_scores(ood_loader)
 
-        labels = np.concatenate([np.zeros(len(id_scores)), np.ones(len(ood_scores))])
-        scores = np.concatenate([id_scores, ood_scores])
-        auroc = roc_auc_score(labels, -scores)  # score 낮을수록 ID
+        # Binary labels: 1 for ID, 0 for OOD (ICON과 동일한 포맷)
+        binary_labels = np.concatenate([np.ones(len(id_scores)), np.zeros(len(ood_scores))])
+        all_scores = np.concatenate([id_scores, ood_scores])
 
-        print(f"[PBL-OOD] AUROC: {auroc*100:.2f}% (Task {task_id+1 if task_id is not None else '-'})")
+        # PBL 점수의 경우 값이 작을수록 ID이므로 부호를 반전하여 사용
+        from sklearn import metrics
+        fpr, tpr, _ = metrics.roc_curve(binary_labels, -all_scores, drop_intermediate=False)
+        auroc = metrics.auc(fpr, tpr)
+
+        # FPR@TPR95 계산
+        idx_tpr95 = np.abs(tpr - 0.95).argmin()
+        fpr_at_tpr95 = fpr[idx_tpr95]
+
+        print(f"[PBL-OOD]: evaluating metrics...")
+        print(f"AUROC: {auroc*100:.2f}%, FPR@TPR95: {fpr_at_tpr95*100:.2f}% (Task {task_id+1 if task_id is not None else '-'})")
+
+        # W&B 로깅 (옵션)
         if args.wandb:
             import wandb
-            wandb.log({"OOD_AUROC": auroc, "TASK": task_id})
-        return auroc 
+            wandb.log({"OOD_AUROC (↑)": auroc*100, "FPR@TPR95 (↓)": fpr_at_tpr95*100, "TASK": task_id})
+
+        return {"auroc": auroc, "fpr_at_tpr95": fpr_at_tpr95, "scores": all_scores} 
