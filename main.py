@@ -166,6 +166,12 @@ if __name__ == '__main__':
     parser.add_argument('--wandb_run', type=str, default=None, help='Wandb run name')
     parser.add_argument('--wandb_project', type=str, default=None, help='Wandb project name')
 
+    # PBL hyperparameters
+    parser.add_argument('--pbl_tau_split', type=float, default=5.0, help='prototype split threshold')
+    parser.add_argument('--pbl_lambda_compact', type=float, default=1.0, help='compactness loss weight')
+    parser.add_argument('--pbl_lambda_sep', type=float, default=0.1, help='separation loss weight (reserved)')
+    parser.add_argument('--pbl_alpha', type=float, default=0.1, help='EMA update factor for proto/radius')
+
     args = parser.parse_args()
     Path(args.data_path).mkdir(parents=True, exist_ok=True)
     main(args)
