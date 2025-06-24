@@ -4,6 +4,7 @@ import numpy as np
 # ICON 엔진의 기능을 재사용하기 위해 상속
 from engines.ICON import Engine as IconEngine
 from engines.ICON import load_model as icon_load_model
+from timm.utils import accuracy
 import utils
 
 
@@ -97,7 +98,7 @@ class Engine(IconEngine):
 
             metric_logger.update(Loss=total_loss.item())
             metric_logger.update(Lr=optimizer.param_groups[0]["lr"])
-            acc1, acc5 = utils.accuracy(outputs, targets, topk=(1, 5))
+            acc1, acc5 = accuracy(outputs, targets, topk=(1, 5))
             metric_logger.meters['Acc@1'].update(acc1.item(), n=inputs.size(0))
             metric_logger.meters['Acc@5'].update(acc5.item(), n=inputs.size(0))
 
