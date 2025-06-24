@@ -139,7 +139,9 @@ class Engine(IconEngine):
         # helper to get features & scores
         def _get_scores(dataloader):
             scores = []
-            for imgs, _ in dataloader:
+            for batch_idx, (imgs, _) in enumerate(dataloader):
+                if args.develop and batch_idx > 20:
+                    break
                 # dataloader가 단일 샘플을 반환할 경우 배치 차원 추가
                 if imgs.dim() == 3:
                     imgs = imgs.unsqueeze(0)
