@@ -120,14 +120,25 @@ class Engine(IconEngine):
 
     # ------------- OOD Score --------------
     def compute_ood_score(self, feature):
-        min_score = float('inf')
+        """특정 feature에 대한 OOD score를 계산합니다.
+
+        반환값은 **파이썬 float** 이어야 이후 numpy 연산에서 문제가 발생하지 않습니다.
+        """
+
+        min_score = float('inf')  # 가장 작은 score (ID일수록 작음)
+
         for class_id, plist in self.prototypes.items():
             for center, radius in plist:
+                # 거리 및 스코어 계산 (tensor scalar)
                 dist = torch.norm(feature - center, p=2)
                 score = dist / (radius + 1e-6)
-                if score < min_score:
-                    min_score = score
-        return min_score
+
+                # Tensor → float 변환을 통해 python 영역에서 비교 수행
+                score_val = score.item()
+                if score_val < min_score:
+                    min_score = score_val
+
+        return min_score  # float 값
 
     # ------------- OOD 평가 --------------
     @torch.no_grad()
