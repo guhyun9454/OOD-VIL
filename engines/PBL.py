@@ -1,5 +1,6 @@
 import torch
 import numpy as np
+import sys
 
 # ICON 엔진의 기능을 재사용하기 위해 상속
 from engines.ICON import Engine as IconEngine
@@ -72,7 +73,10 @@ class Engine(IconEngine):
     # ------------- Override train_one_epoch ----------------
     def train_one_epoch(self, model: torch.nn.Module, criterion, data_loader, optimizer, device, epoch: int, max_norm: float = 0,
                         set_training_mode=True, task_id=-1, class_mask=None, ema_model=None, args=None):
+        """ICON 의 증분학습 로직을 그대로 가져오고, PBL 전용 compactness loss 만 추가"""
+
         model.train(set_training_mode)
+
         metric_logger = utils.MetricLogger(delimiter="  ")
         metric_logger.add_meter('Lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
         metric_logger.add_meter('Loss', utils.SmoothedValue(window_size=1, fmt='{value:.4f}'))
@@ -81,12 +85,43 @@ class Engine(IconEngine):
         for batch_idx, (inputs, targets) in enumerate(metric_logger.log_every(data_loader, args.print_freq, header)):
             if args.develop and batch_idx > 20:
                 break
+
             inputs = inputs.to(device, non_blocking=True)
             targets = targets.to(device, non_blocking=True)
 
-            outputs = model(inputs)
-            loss_cls = criterion(outputs, targets)
+            # ---------------- ICON forward & loss 구성 -----------------
+            outputs = model(inputs)  # (bs, class + n)
 
+            # distillation loss (from ICON)
+            distill_loss = 0
+            if self.distill_head is not None:
+                feature_for_distill = model.forward_features(inputs)[:, 0]
+                output_distill = self.distill_head(feature_for_distill)
+                mask = torch.isin(torch.tensor(self.labels_in_head), torch.tensor(self.current_classes))
+                cur_class_nodes = torch.where(mask)[0]
+                m = torch.isin(torch.tensor(self.labels_in_head[cur_class_nodes]), torch.tensor(list(self.added_classes_in_cur_task)))
+                distill_node_indices = self.labels_in_head[cur_class_nodes][~m]
+                distill_loss = self.kl_div(outputs[:, distill_node_indices], output_distill[:, distill_node_indices])
+
+            # ICON 의 get_max_label_logits 로 multi-node 통합
+            if outputs.shape[-1] > self.num_classes:
+                outputs, _, _ = self.get_max_label_logits(outputs, class_mask[task_id], slice=False)
+                if len(self.added_classes_in_cur_task) > 0:
+                    for added_class in self.added_classes_in_cur_task:
+                        cur_node = np.where(self.labels_in_head == added_class)[0][-1]
+                        outputs[:, added_class] = outputs[:, cur_node]
+                outputs = outputs[:, :self.num_classes]
+
+            # 현재 task 가 아닌 클래스는 masking
+            if class_mask is not None:
+                mask = class_mask[task_id]
+                not_mask = np.setdiff1d(np.arange(args.num_classes), mask)
+                not_mask = torch.tensor(not_mask, dtype=torch.int64).to(device)
+                logits = outputs.index_fill(dim=1, index=not_mask, value=float('-inf'))
+            else:
+                logits = outputs
+
+            # --------------- PBL Compactness loss 계산 -----------------
             features = model.forward_features(inputs)[:, 0]
             compact_loss = 0.0
             for feature, label in zip(features, targets):
@@ -95,24 +130,33 @@ class Engine(IconEngine):
                 compact_loss += self._compactness_loss(feature, proto)
             compact_loss = compact_loss / features.size(0)
 
-            total_loss = loss_cls + self.lambda_compact * compact_loss
+            # --------------- 최종 loss -----------------
+            loss = criterion(logits, targets) + distill_loss + self.lambda_compact * compact_loss
+
+            if not torch.isfinite(loss):
+                print("Loss is {}, stopping training".format(loss.item()))
+                sys.exit(1)
 
             optimizer.zero_grad()
-            total_loss.backward()
+            loss.backward(retain_graph=True)
             optimizer.step()
 
-            # --- radius 파라미터 업데이트 (simple SGD) ---
+            # radius 파라미터 업데이트 (simple SGD)
             if hasattr(self, 'radius_params') and self.radius_params:
                 for r in self.radius_params:
                     if r.grad is not None:
-                        r.data -= args.lr * r.grad  # 동일 learning rate 사용
+                        r.data -= args.lr * r.grad
                         r.grad = None
 
-            metric_logger.update(Loss=total_loss.item())
+            # ---------------- metric logging ----------------
+            metric_logger.update(Loss=loss.item())
             metric_logger.update(Lr=optimizer.param_groups[0]["lr"])
-            acc1, acc5 = accuracy(outputs, targets, topk=(1, 5))
+            acc1, acc5 = accuracy(logits, targets, topk=(1, 5))
             metric_logger.meters['Acc@1'].update(acc1.item(), n=inputs.size(0))
             metric_logger.meters['Acc@5'].update(acc5.item(), n=inputs.size(0))
+
+            if ema_model is not None:
+                ema_model.update(model.get_adapter())
 
         metric_logger.synchronize_between_processes()
         print("Averaged stats:", metric_logger)
