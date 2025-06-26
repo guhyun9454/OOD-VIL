@@ -207,7 +207,9 @@ class Engine(IconEngine):
         """Helper function to extract features and labels from a dataloader."""
         all_features = []
         all_labels = []
-        for imgs, labels in dataloader:
+        for batch_idx, (imgs, labels) in enumerate(dataloader):
+            if batch_idx > 10 and self.args.develop:
+                break
             if imgs.dim() == 3: imgs = imgs.unsqueeze(0)
             imgs = imgs.to(device, non_blocking=True)
             feats = model.forward_features(imgs)[:, 0]
