@@ -189,25 +189,34 @@ class Engine(IconEngine):
 
     # ------------- OOD Score --------------
     def compute_ood_score(self, feature):
-        """특정 feature에 대한 OOD score를 계산합니다.
-
-        반환값은 **파이썬 float** 이어야 이후 numpy 연산에서 문제가 발생하지 않습니다.
-        """
-
-        min_score = float('inf')  # 가장 작은 score (ID일수록 작음)
+        """특정 feature에 대한 OOD score를 계산합니다."""
+        min_score = float('inf')
+        feature_tensor = torch.from_numpy(feature).to(self.device)
 
         for class_id, plist in self.prototypes.items():
             for center, radius in plist:
-                # 거리 및 스코어 계산 (tensor scalar)
-                dist = torch.norm(feature - center, p=2)
+                dist = torch.norm(feature_tensor - center, p=2)
                 score = dist / (radius + 1e-6)
-
-                # Tensor → float 변환을 통해 python 영역에서 비교 수행
                 score_val = score.item()
                 if score_val < min_score:
                     min_score = score_val
 
-        return min_score  # float 값
+        return min_score
+
+    def _get_features_and_labels(self, model, dataloader, device, is_ood=False):
+        """Helper function to extract features and labels from a dataloader."""
+        all_features = []
+        all_labels = []
+        for imgs, labels in dataloader:
+            if imgs.dim() == 3: imgs = imgs.unsqueeze(0)
+            imgs = imgs.to(device, non_blocking=True)
+            feats = model.forward_features(imgs)[:, 0]
+            all_features.append(feats.cpu().numpy())
+            if is_ood:
+                all_labels.append(np.full(len(imgs), -1)) # -1 for OOD
+            else:
+                all_labels.append(labels.cpu().numpy())
+        return np.concatenate(all_features), np.concatenate(all_labels)
 
     # ------------- OOD 평가 --------------
     @torch.no_grad()
@@ -216,30 +225,24 @@ class Engine(IconEngine):
         from sklearn.metrics import roc_auc_score
         model.eval()
 
-        # helper to get features & scores
-        def _get_scores(dataloader):
-            scores = []
-            for batch_idx, (imgs, _) in enumerate(dataloader):
-                if args.develop and batch_idx > 20:
-                    break
-                # dataloader가 단일 샘플을 반환할 경우 배치 차원 추가
-                if imgs.dim() == 3: imgs = imgs.unsqueeze(0)
-                imgs = imgs.to(device, non_blocking=True)
-                feats = model.forward_features(imgs)[:, 0]
-                for f in feats:
-                    scores.append(self.compute_ood_score(f))
-            return scores
-
         id_loader = id_datasets if isinstance(id_datasets, torch.utils.data.DataLoader) else \
             torch.utils.data.DataLoader(id_datasets, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
 
-        if isinstance(ood_dataset, torch.utils.data.DataLoader):
-            ood_loader = ood_dataset
-        else:
-            ood_loader = torch.utils.data.DataLoader(ood_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
+        ood_loader = ood_dataset if isinstance(ood_dataset, torch.utils.data.DataLoader) else \
+            torch.utils.data.DataLoader(ood_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
 
-        id_scores = _get_scores(id_loader)
-        ood_scores = _get_scores(ood_loader)
+        # 1. Extract features ONCE
+        print("PBL LOG: Extracting features for ID and OOD datasets...")
+        id_features, id_labels = self._get_features_and_labels(model, id_loader, device)
+        ood_features, ood_labels = self._get_features_and_labels(model, ood_loader, device, is_ood=True)
+        print("PBL LOG: Feature extraction complete.")
+
+        # 2. Calculate OOD scores using extracted features
+        id_scores = [self.compute_ood_score(f) for f in id_features]
+        ood_scores = [self.compute_ood_score(f) for f in ood_features]
+
+        # 3. Visualize using extracted features
+        self.visualize_prototypes_tsne(id_features, id_labels, ood_features, task_id, args)
 
         # Anomaly score 히스토그램 저장 (verbose 모드나 wandb 활성화 시)
         if args.verbose or args.wandb:
@@ -258,11 +261,7 @@ class Engine(IconEngine):
                 import wandb
                 wandb.log({f"Anomaly Histogram TASK {task_id}": wandb.Image(hist_path)})
 
-        # --- PBL t-SNE Visualization ---
-        self.visualize_prototypes_tsne(model, id_loader, ood_loader, device, task_id, args)
-        # --- End Visualization ---
-
-        # Binary labels: 1 for ID, 0 for OOD (ICON과 동일한 포맷)
+        # Binary labels: 1 for ID, 0 for OOD
         binary_labels = np.concatenate([np.ones(len(id_scores)), np.zeros(len(ood_scores))])
         all_scores = np.concatenate([id_scores, ood_scores])
 
@@ -285,40 +284,16 @@ class Engine(IconEngine):
 
         return {"auroc": auroc, "fpr_at_tpr95": fpr_at_tpr95, "scores": all_scores}
 
-    def visualize_prototypes_tsne(self, model, id_loader, ood_loader, device, task_id, args):
+    def visualize_prototypes_tsne(self, id_features, id_labels, ood_features, task_id, args):
         print("PBL LOG: Starting t-SNE visualization...")
-        model.eval()
         
         # 1. Create directory for plots
         save_dir = os.path.join(args.save, 'tsne_plots')
         os.makedirs(save_dir, exist_ok=True)
 
-        # 2. Gather features and labels
-        all_features = []
-        all_labels = []
-
-        # Get ID features
-        for imgs, labels in id_loader:
-            imgs = imgs.to(device, non_blocking=True)
-            feats = model.forward_features(imgs)[:, 0]
-            all_features.append(feats.cpu().numpy())
-            all_labels.append(labels.cpu().numpy())
-
-        # Get OOD features
-        ood_features = []
-        for imgs, _ in ood_loader:
-            if imgs.dim() == 3: imgs = imgs.unsqueeze(0)
-            imgs = imgs.to(device, non_blocking=True)
-            feats = model.forward_features(imgs)[:, 0]
-            ood_features.append(feats.cpu().numpy())
-        
-        if ood_features:
-            ood_features_np = np.concatenate(ood_features)
-            all_features.append(ood_features_np)
-            all_labels.append(np.full(len(ood_features_np), -1)) # -1 for OOD
-
-        all_features = np.concatenate(all_features)
-        all_labels = np.concatenate(all_labels)
+        # 2. Combine features
+        all_features = np.concatenate([id_features, ood_features])
+        all_labels = np.concatenate([id_labels, np.full(len(ood_features), -1)])
 
         # 3. Gather prototypes
         proto_centers = []
@@ -349,7 +324,6 @@ class Engine(IconEngine):
         ax = plt.gca()
         
         unique_labels = np.unique(all_labels)
-        # Use a colormap that has enough distinct colors
         colors = plt.get_cmap('tab20', len(unique_labels))
         
         for i, label in enumerate(unique_labels):
@@ -359,7 +333,6 @@ class Engine(IconEngine):
             else:
                 ax.scatter(feat_tsne[idx, 0], feat_tsne[idx, 1], color=colors(i), label=f'Class {label}', alpha=0.5, s=15)
 
-        # Heuristic scaling for radius visualization
         xlim = ax.get_xlim()
         x_range = xlim[1] - xlim[0]
         scaling_factor = x_range / 150.0
@@ -373,25 +346,17 @@ class Engine(IconEngine):
             if len(label_idx_list) > 0:
                 color = colors(label_idx_list[0])
                 ax.scatter(center_2d[0], center_2d[1], c=[color], marker='*', s=300, edgecolor='black', zorder=5)
-                
-                # NOTE: The radius is visualized with a heuristic scaling factor. It represents the relative
-                # size of the boundary but is not a precise projection from the high-dimensional space.
                 circle = Circle(center_2d, radius * scaling_factor, color=color, fill=False, linewidth=2, linestyle='--', alpha=0.8, zorder=4)
                 ax.add_patch(circle)
 
         plt.title(f't-SNE Visualization for Task {task_id}', fontsize=20)
         plt.xlabel('t-SNE dimension 1', fontsize=14)
         plt.ylabel('t-SNE dimension 2', fontsize=14)
-        
-        # Place legend outside the plot
         plt.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize=12)
-        plt.tight_layout(rect=[0, 0, 0.85, 1]) # Adjust layout to make room for legend
+        plt.tight_layout(rect=[0, 0, 0.85, 1])
         
         plot_path = os.path.join(save_dir, f'task_{task_id}_tsne.png')
         plt.savefig(plot_path)
         plt.close()
         
         print(f"PBL LOG: Saved t-SNE visualization to {plot_path}")
-        if args.wandb:
-            import wandb
-            wandb.log({f"t-SNE Visualization TASK {task_id}": wandb.Image(plot_path)})
