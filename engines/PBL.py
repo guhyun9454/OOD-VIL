@@ -1,6 +1,10 @@
 import torch
 import numpy as np
 import sys
+import os
+import matplotlib.pyplot as plt
+from sklearn.manifold import TSNE
+from matplotlib.patches import Circle
 
 # ICON 엔진의 기능을 재사용하기 위해 상속
 from engines.ICON import Engine as IconEngine
@@ -54,12 +58,18 @@ class Engine(IconEngine):
 
     def _assign_prototype(self, class_id, feature):
         if class_id not in self.prototypes or len(self.prototypes[class_id]) == 0:
+            print(f"PBL LOG: [Class {class_id}] Initializing first prototype.")
             self.prototypes.setdefault(class_id, []).append(self._init_prototype(feature))
+            print(f"PBL LOG: [Class {class_id}] Now has {len(self.prototypes[class_id])} prototypes.")
             return 0
+        
         dists = [torch.norm(feature - p[0], p=2) for p in self.prototypes[class_id]]
-        min_idx = int(torch.argmin(torch.stack(dists)))
-        if dists[min_idx] > self.tau_split:
+        min_dist, min_idx = torch.min(torch.stack(dists)), int(torch.argmin(torch.stack(dists)))
+
+        if min_dist > self.tau_split:
+            print(f"PBL LOG: [Class {class_id}] Distance {min_dist:.2f} > tau_split({self.tau_split}). Adding new prototype.")
             self.prototypes[class_id].append(self._init_prototype(feature))
+            print(f"PBL LOG: [Class {class_id}] Now has {len(self.prototypes[class_id])} prototypes.")
             return len(self.prototypes[class_id]) - 1
         else:
             self.prototypes[class_id][min_idx] = self._update_prototype(self.prototypes[class_id][min_idx], feature)
@@ -77,6 +87,20 @@ class Engine(IconEngine):
         """ICON 의 증분학습 로직을 그대로 가져오고, PBL 전용 compactness loss 만 추가"""
 
         model.train(set_training_mode)
+
+        # --- PBL LOGGING ---
+        if epoch == 0: # Log only on the first epoch of the task
+            current_classes = class_mask[task_id]
+            try:
+                if self.domain_list and len(self.domain_list) > max(current_classes):
+                    current_domains = {c: self.domain_list[c] for c in current_classes}
+                    print(f"PBL LOG: Training Task {task_id}. Current Classes: {current_classes}. Domains: {current_domains}")
+                else:
+                    print(f"PBL LOG: Training Task {task_id}. Current Classes: {current_classes}.")
+            except Exception as e:
+                print(f"PBL LOG: Could not log domain info. Error: {e}")
+                print(f"PBL LOG: Training Task {task_id}. Current Classes: {current_classes}.")
+        # --- END LOGGING ---
 
         metric_logger = utils.MetricLogger(delimiter="  ")
         metric_logger.add_meter('Lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
@@ -199,8 +223,7 @@ class Engine(IconEngine):
                 if args.develop and batch_idx > 20:
                     break
                 # dataloader가 단일 샘플을 반환할 경우 배치 차원 추가
-                if imgs.dim() == 3:
-                    imgs = imgs.unsqueeze(0)
+                if imgs.dim() == 3: imgs = imgs.unsqueeze(0)
                 imgs = imgs.to(device, non_blocking=True)
                 feats = model.forward_features(imgs)[:, 0]
                 for f in feats:
@@ -220,7 +243,6 @@ class Engine(IconEngine):
 
         # Anomaly score 히스토그램 저장 (verbose 모드나 wandb 활성화 시)
         if args.verbose or args.wandb:
-            # PBL 스코어는 값이 작을수록 ID이므로, 시각화를 위해 numpy array로 변환
             id_scores_np = np.array(id_scores)
             ood_scores_np = np.array(ood_scores)
             
@@ -235,6 +257,10 @@ class Engine(IconEngine):
             if args.wandb:
                 import wandb
                 wandb.log({f"Anomaly Histogram TASK {task_id}": wandb.Image(hist_path)})
+
+        # --- PBL t-SNE Visualization ---
+        self.visualize_prototypes_tsne(model, id_loader, ood_loader, device, task_id, args)
+        # --- End Visualization ---
 
         # Binary labels: 1 for ID, 0 for OOD (ICON과 동일한 포맷)
         binary_labels = np.concatenate([np.ones(len(id_scores)), np.zeros(len(ood_scores))])
@@ -257,4 +283,112 @@ class Engine(IconEngine):
             import wandb
             wandb.log({"OOD_AUROC (↑)": auroc*100, "FPR@TPR95 (↓)": fpr_at_tpr95*100, "TASK": task_id})
 
-        return {"auroc": auroc, "fpr_at_tpr95": fpr_at_tpr95, "scores": all_scores} 
+        return {"auroc": auroc, "fpr_at_tpr95": fpr_at_tpr95, "scores": all_scores}
+
+    def visualize_prototypes_tsne(self, model, id_loader, ood_loader, device, task_id, args):
+        print("PBL LOG: Starting t-SNE visualization...")
+        model.eval()
+        
+        # 1. Create directory for plots
+        save_dir = os.path.join(args.output_dir, 'tsne_plots')
+        os.makedirs(save_dir, exist_ok=True)
+
+        # 2. Gather features and labels
+        all_features = []
+        all_labels = []
+
+        # Get ID features
+        for imgs, labels in id_loader:
+            imgs = imgs.to(device, non_blocking=True)
+            feats = model.forward_features(imgs)[:, 0]
+            all_features.append(feats.cpu().numpy())
+            all_labels.append(labels.cpu().numpy())
+
+        # Get OOD features
+        ood_features = []
+        for imgs, _ in ood_loader:
+            if imgs.dim() == 3: imgs = imgs.unsqueeze(0)
+            imgs = imgs.to(device, non_blocking=True)
+            feats = model.forward_features(imgs)[:, 0]
+            ood_features.append(feats.cpu().numpy())
+        
+        if ood_features:
+            ood_features_np = np.concatenate(ood_features)
+            all_features.append(ood_features_np)
+            all_labels.append(np.full(len(ood_features_np), -1)) # -1 for OOD
+
+        all_features = np.concatenate(all_features)
+        all_labels = np.concatenate(all_labels)
+
+        # 3. Gather prototypes
+        proto_centers = []
+        proto_radii = []
+        proto_labels = []
+        if self.prototypes:
+            for class_id, plist in self.prototypes.items():
+                for center, radius in plist:
+                    proto_centers.append(center.cpu().detach().numpy())
+                    proto_radii.append(radius.item())
+                    proto_labels.append(class_id)
+            proto_centers = np.array(proto_centers)
+        
+        if not proto_centers:
+            print("PBL LOG: No prototypes to visualize. Skipping t-SNE.")
+            return
+
+        # 4. Run t-SNE
+        tsne_data = np.vstack([all_features, proto_centers])
+        tsne = TSNE(n_components=2, perplexity=30, n_iter=300, random_state=args.seed)
+        tsne_results = tsne.fit_transform(tsne_data)
+        
+        feat_tsne = tsne_results[:-len(proto_centers)]
+        proto_tsne = tsne_results[-len(proto_centers):]
+
+        # 5. Plotting
+        plt.figure(figsize=(20, 16))
+        ax = plt.gca()
+        
+        unique_labels = np.unique(all_labels)
+        # Use a colormap that has enough distinct colors
+        colors = plt.get_cmap('tab20', len(unique_labels))
+        
+        for i, label in enumerate(unique_labels):
+            idx = all_labels == label
+            if label == -1:
+                ax.scatter(feat_tsne[idx, 0], feat_tsne[idx, 1], c='gray', label='OOD', alpha=0.2, s=10)
+            else:
+                ax.scatter(feat_tsne[idx, 0], feat_tsne[idx, 1], color=colors(i), label=f'Class {label}', alpha=0.5, s=15)
+
+        # Heuristic scaling for radius visualization
+        xlim = ax.get_xlim()
+        x_range = xlim[1] - xlim[0]
+        scaling_factor = x_range / 150.0
+
+        for i in range(len(proto_tsne)):
+            center_2d = proto_tsne[i]
+            radius = proto_radii[i]
+            label = proto_labels[i]
+            
+            label_idx_list = np.where(unique_labels == label)[0]
+            if len(label_idx_list) > 0:
+                color = colors(label_idx_list[0])
+                ax.scatter(center_2d[0], center_2d[1], c=[color], marker='*', s=300, edgecolor='black', zorder=5)
+                
+                # NOTE: The radius is visualized with a heuristic scaling factor. It represents the relative
+                # size of the boundary but is not a precise projection from the high-dimensional space.
+                circle = Circle(center_2d, radius * scaling_factor, color=color, fill=False, linewidth=2, linestyle='--', alpha=0.8, zorder=4)
+                ax.add_patch(circle)
+
+        plt.title(f't-SNE Visualization for Task {task_id}', fontsize=20)
+        plt.xlabel('t-SNE dimension 1', fontsize=14)
+        plt.ylabel('t-SNE dimension 2', fontsize=14)
+        
+        # Place legend outside the plot
+        plt.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize=12)
+        plt.tight_layout(rect=[0, 0, 0.85, 1]) # Adjust layout to make room for legend
+        
+        plot_path = os.path.join(save_dir, f'task_{task_id}_tsne.png')
+        plt.savefig(plot_path)
+        plt.close()
+        
+        print(f"PBL LOG: Saved t-SNE visualization to {plot_path}")
