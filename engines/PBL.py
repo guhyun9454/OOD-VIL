@@ -290,7 +290,7 @@ class Engine(IconEngine):
         model.eval()
         
         # 1. Create directory for plots
-        save_dir = os.path.join(args.output_dir, 'tsne_plots')
+        save_dir = os.path.join(args.save, 'tsne_plots')
         os.makedirs(save_dir, exist_ok=True)
 
         # 2. Gather features and labels
