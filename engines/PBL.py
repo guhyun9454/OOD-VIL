@@ -298,20 +298,21 @@ class Engine(IconEngine):
         all_labels = np.concatenate([id_labels, np.full(len(ood_features), -1)])
 
         # 3. Gather prototypes
-        proto_centers = []
+        proto_centers_list = []
         proto_radii = []
         proto_labels = []
         if self.prototypes:
             for class_id, plist in self.prototypes.items():
                 for center, radius in plist:
-                    proto_centers.append(center.cpu().detach().numpy())
+                    proto_centers_list.append(center.cpu().detach().numpy())
                     proto_radii.append(radius.item())
                     proto_labels.append(class_id)
-            proto_centers = np.array(proto_centers)
-        
-        if not proto_centers:
+
+        if not proto_centers_list:
             print("PBL LOG: No prototypes to visualize. Skipping t-SNE.")
             return
+        
+        proto_centers = np.array(proto_centers_list)
 
         # 4. Run t-SNE
         tsne_data = np.vstack([all_features, proto_centers])
