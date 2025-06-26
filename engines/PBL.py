@@ -7,6 +7,7 @@ from engines.ICON import Engine as IconEngine
 from engines.ICON import load_model as icon_load_model
 from timm.utils import accuracy
 import utils
+from utils import save_anomaly_histogram
 
 
 def load_model(args):
@@ -216,6 +217,24 @@ class Engine(IconEngine):
 
         id_scores = _get_scores(id_loader)
         ood_scores = _get_scores(ood_loader)
+
+        # Anomaly score 히스토그램 저장 (verbose 모드나 wandb 활성화 시)
+        if args.verbose or args.wandb:
+            # PBL 스코어는 값이 작을수록 ID이므로, 시각화를 위해 numpy array로 변환
+            id_scores_np = np.array(id_scores)
+            ood_scores_np = np.array(ood_scores)
+            
+            hist_path = save_anomaly_histogram(
+                id_scores_np, 
+                ood_scores_np, 
+                args, 
+                suffix='pbl', 
+                task_id=task_id
+            )
+            
+            if args.wandb:
+                import wandb
+                wandb.log({f"Anomaly Histogram TASK {task_id}": wandb.Image(hist_path)})
 
         # Binary labels: 1 for ID, 0 for OOD (ICON과 동일한 포맷)
         binary_labels = np.concatenate([np.ones(len(id_scores)), np.zeros(len(ood_scores))])
