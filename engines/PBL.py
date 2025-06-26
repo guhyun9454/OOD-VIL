@@ -392,3 +392,6 @@ class Engine(IconEngine):
         plt.close()
         
         print(f"PBL LOG: Saved t-SNE visualization to {plot_path}")
+        if args.wandb:
+            import wandb
+            wandb.log({f"t-SNE Visualization TASK {task_id}": wandb.Image(plot_path)})
