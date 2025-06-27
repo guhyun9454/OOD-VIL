@@ -558,15 +558,18 @@ class Engine():
         
         # ID 및 OOD 데이터의 로짓
         id_logits_list = []
+        id_targets_list = []
         ood_logits_list = []
         
         with torch.no_grad():
             # ID 데이터 처리
-            for inputs, _ in aligned_id_loader:
+            for inputs, targets in aligned_id_loader:
                 inputs = inputs.to(device)
+                targets = targets.to(device)
                 outputs = model(inputs)
                 outputs, _, _ = self.get_max_label_logits(outputs, list(range(self.num_classes)), slice=True)
                 id_logits_list.append(outputs)
+                id_targets_list.append(targets)
             
             # OOD 데이터 처리
             for inputs, _ in aligned_ood_loader:
@@ -577,6 +580,7 @@ class Engine():
         
         # ID 및 OOD 데이터의 로짓 합치기
         id_logits = torch.cat(id_logits_list, dim=0)
+        id_targets = torch.cat(id_targets_list, dim=0)
         ood_logits = torch.cat(ood_logits_list, dim=0)
         
         # Logits 통계 시각화 및 저장
@@ -638,6 +642,79 @@ class Engine():
                 "scores": all_scores
             }
         
+        """================ 추가: 그룹별 분석 및 시각화 ================="""
+
+        # 1) 그룹 정의
+        old_classes = [cls for t in range(task_id) for cls in self.class_mask[t]] if task_id is not None and task_id > 0 else []
+        new_classes = self.class_mask[task_id] if task_id is not None else []
+
+        # 2) Confidence 계산
+        id_conf = F.softmax(id_logits, dim=1).max(dim=1)[0]
+        ood_conf = F.softmax(ood_logits, dim=1).max(dim=1)[0]
+
+        conf_dict = {
+            'Old ID' if len(old_classes) > 0 else 'ID': id_conf[torch.isin(id_targets, torch.tensor(old_classes, device=device, dtype=torch.int64)).to(device)].cpu().numpy() if len(old_classes) > 0 else id_conf.cpu().numpy(),
+            'New ID': id_conf[torch.isin(id_targets, torch.tensor(new_classes, device=device, dtype=torch.int64)).to(device)].cpu().numpy() if len(new_classes) > 0 else np.array([]),
+            'OOD': ood_conf.cpu().numpy()
+        }
+
+        # 빈 배열 제거
+        conf_dict = {k: v for k, v in conf_dict.items() if len(v) > 0}
+
+        if args.save:
+            hist_path, box_path = utils.save_confidence_plots(conf_dict, args, task_id)
+            if args.wandb:
+                import wandb
+                wandb.log({f'Confidence Hist TASK {task_id}': wandb.Image(hist_path),
+                           f'Confidence Box TASK {task_id}': wandb.Image(box_path)})
+
+        # 3) 그룹별 정확도
+        id_preds = torch.argmax(id_logits, dim=1)
+        ood_preds = torch.argmax(ood_logits, dim=1)
+
+        acc_dict = {}
+        if len(old_classes) > 0:
+            mask_old = torch.isin(id_targets, torch.tensor(old_classes, device=device, dtype=torch.int64)).to(device)
+            if mask_old.sum() > 0:
+                correct_old = (id_preds[mask_old] == id_targets[mask_old]).float().mean().item()
+                acc_dict['Old ID'] = correct_old
+        if len(new_classes) > 0:
+            mask_new = torch.isin(id_targets, torch.tensor(new_classes, device=device, dtype=torch.int64)).to(device)
+            if mask_new.sum() > 0:
+                correct_new = (id_preds[mask_new] == id_targets[mask_new]).float().mean().item()
+                acc_dict['New ID'] = correct_new
+        # OOD 정확도 정의: OOD 샘플이 new 클래스와 old 클래스 어떤것으로 예측되는 비율? 여기서는 OOD를 new 클래스로 잘못 예측한 비율을 사용
+        if ood_preds.numel() > 0:
+            pred_new_on_ood = torch.isin(ood_preds, torch.tensor(new_classes, device=device, dtype=torch.int64)).float().mean().item()
+            acc_dict['OOD→New'] = pred_new_on_ood
+
+        if args.save and len(acc_dict) > 0:
+            acc_path = utils.save_group_accuracy_plot(acc_dict, args, task_id)
+            if args.wandb:
+                import wandb
+                wandb.log({f'Group Accuracy TASK {task_id}': wandb.Image(acc_path)})
+
+        # 4) Confusion Matrix (Class + OOD)
+        from sklearn.metrics import confusion_matrix
+        y_true_full = torch.cat([id_targets.cpu(), torch.full((ood_logits.shape[0],), self.num_classes, dtype=torch.int64)])
+        y_pred_full = torch.cat([id_preds.cpu(), ood_preds.cpu()])
+        cm = confusion_matrix(y_true_full.numpy(), y_pred_full.numpy(), labels=list(range(self.num_classes+1)))
+        cm_path = None
+        if args.save:
+            cm_path = utils.save_confusion_matrix_plot(cm, labels=[str(i) for i in range(self.num_classes+1)], args=args, task_id=task_id)
+            if args.wandb:
+                import wandb
+                wandb.log({f'Confusion Matrix TASK {task_id}': wandb.Image(cm_path)})
+
+        # 5) Sorted Logits Mean 시각화
+        if args.save:
+            id_sort_path = utils.save_sorted_logits_plot(id_logits, args, group_name='ID', task_id=task_id)
+            ood_sort_path = utils.save_sorted_logits_plot(ood_logits, args, group_name='OOD', task_id=task_id)
+            if args.wandb:
+                import wandb
+                wandb.log({f'Sorted Logits ID TASK {task_id}': wandb.Image(id_sort_path),
+                           f'Sorted Logits OOD TASK {task_id}': wandb.Image(ood_sort_path)})
+
         return results
 
     def restore_head_from_checkpoint(self, model, checkpoint):

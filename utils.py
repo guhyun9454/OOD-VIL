@@ -423,3 +423,94 @@ def seed_everything(seed: int = 42):
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
+
+def save_confidence_plots(conf_dict: dict, args, task_id=None):
+    """
+    그룹별 Confidence Score (최대 softmax 확률)의 분포와 Box Plot을 저장합니다.
+
+    Args:
+        conf_dict (dict): {group_name: np.array(confidences)} 형식의 딕셔너리
+        args: 실험 인자
+        task_id (int, optional): 현재 태스크 ID
+    Returns:
+        tuple: (hist_path, box_path)
+    """
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    save_dir = os.path.join(args.save, 'confidence')
+    os.makedirs(save_dir, exist_ok=True)
+    task_suffix = f'_task{task_id+1}' if task_id is not None else ''
+
+    # Histogram / KDE plot
+    plt.figure(figsize=(10, 6))
+    for group, vals in conf_dict.items():
+        sns.kdeplot(vals, label=group, fill=True, common_norm=False, alpha=0.4)
+    plt.title(f'Confidence Score Distribution{task_suffix}')
+    plt.xlabel('Confidence')
+    plt.ylabel('Density')
+    plt.legend()
+    hist_path = os.path.join(save_dir, f'confidence_hist{task_suffix}.png')
+    plt.savefig(hist_path)
+    plt.close()
+
+    # Box plot
+    plt.figure(figsize=(8, 6))
+    data = [vals for vals in conf_dict.values()]
+    labels = list(conf_dict.keys())
+    sns.boxplot(data=data)
+    plt.xticks(ticks=range(len(labels)), labels=labels)
+    plt.ylabel('Confidence')
+    plt.title(f'Confidence Score Box Plot{task_suffix}')
+    box_path = os.path.join(save_dir, f'confidence_box{task_suffix}.png')
+    plt.savefig(box_path)
+    plt.close()
+
+    return hist_path, box_path
+
+
+def save_group_accuracy_plot(acc_dict: dict, args, task_id=None):
+    """
+    그룹별 정확도를 막대그래프로 저장합니다.
+    """
+    import matplotlib.pyplot as plt
+    save_dir = os.path.join(args.save, 'accuracy')
+    os.makedirs(save_dir, exist_ok=True)
+    task_suffix = f'_task{task_id+1}' if task_id is not None else ''
+
+    groups = list(acc_dict.keys())
+    values = [acc_dict[g] * 100 for g in groups]  # 퍼센트 단위
+    plt.figure(figsize=(8, 6))
+    sns.barplot(x=groups, y=values)
+    plt.ylim(0, 100)
+    plt.ylabel('Accuracy (%)')
+    plt.title(f'Group Accuracy{task_suffix}')
+    for i, v in enumerate(values):
+        plt.text(i, v + 1, f'{v:.1f}%', ha='center')
+    acc_path = os.path.join(save_dir, f'group_acc{task_suffix}.png')
+    plt.savefig(acc_path)
+    plt.close()
+    return acc_path
+
+
+def save_sorted_logits_plot(logits: torch.Tensor, args, group_name: str = '', task_id=None):
+    """
+    Logits를 절댓값 기준 내림차순으로 정렬한 후 평균을 시각화합니다.
+    """
+    import matplotlib.pyplot as plt
+    save_dir = os.path.join(args.save, 'sorted_logits')
+    os.makedirs(save_dir, exist_ok=True)
+    task_suffix = f'_task{task_id+1}' if task_id is not None else ''
+
+    # 크기순으로 정렬 후 평균
+    sorted_logits, _ = torch.sort(logits, dim=1, descending=True)
+    mean_sorted = torch.mean(sorted_logits, dim=0).cpu().numpy()
+
+    plt.figure(figsize=(10, 5))
+    plt.plot(mean_sorted)
+    plt.xlabel('Sorted Logit Index')
+    plt.ylabel('Mean Logit Value')
+    plt.title(f'{group_name} Mean Sorted Logits{task_suffix}')
+    path = os.path.join(save_dir, f'sorted_logits_{group_name.lower().replace(" ", "_")}{task_suffix}.png')
+    plt.savefig(path)
+    plt.close()
+    return path
