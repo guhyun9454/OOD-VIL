@@ -228,10 +228,10 @@ class Engine(IconEngine):
         model.eval()
 
         id_loader = id_datasets if isinstance(id_datasets, torch.utils.data.DataLoader) else \
-            torch.utils.data.DataLoader(id_datasets, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
+            torch.utils.data.DataLoader(id_datasets, batch_size=args.batch_size, shuffle=False, num_workers=0)
 
         ood_loader = ood_dataset if isinstance(ood_dataset, torch.utils.data.DataLoader) else \
-            torch.utils.data.DataLoader(ood_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
+            torch.utils.data.DataLoader(ood_dataset, batch_size=args.batch_size, shuffle=False, num_workers=0)
 
         # 1. Extract features ONCE
         print("PBL LOG: Extracting features for ID and OOD datasets...")
@@ -283,6 +283,10 @@ class Engine(IconEngine):
         if args.wandb:
             import wandb
             wandb.log({"OOD_AUROC (↑)": auroc*100, "FPR@TPR95 (↓)": fpr_at_tpr95*100, "TASK": task_id})
+
+        # DataLoader 명시적 해제로 파일 디스크립터 정리
+        del id_loader, ood_loader
+        torch.cuda.empty_cache()
 
         return {"auroc": auroc, "fpr_at_tpr95": fpr_at_tpr95, "scores": all_scores}
 

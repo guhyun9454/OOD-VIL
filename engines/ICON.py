@@ -541,20 +541,29 @@ class Engine():
             uniform = torch.ones_like(logits) / logits.shape[-1]
             return F.cross_entropy(logits, uniform, reduction='none')
         
-        # 데이터셋 샘플 수 맞추기
+        # 데이터셋 샘플 수 제한 (tSNE를 위해 적당한 수로 제한)
         id_size = len(id_datasets)
         ood_size = len(ood_dataset)
-        min_size = min(id_size, ood_size)
+        
+        # tSNE를 위해 최대 샘플 수를 제한
+        max_samples_for_tsne = 2000  # tSNE에 적당한 샘플 수
+        
         if args.develop:
-            min_size = 1000
+            max_samples_for_tsne = 1000
+        
+        # 두 데이터셋 중 작은 크기를 선택하되, 최대 제한을 적용
+        min_size = min(id_size, ood_size, max_samples_for_tsne)
+        
         if args.verbose:
             print(f"ID dataset size: {id_size}, OOD dataset size: {ood_size}. Using {min_size} samples each for evaluation.")
         
         id_dataset_aligned = RandomSampleWrapper(id_datasets, min_size, args.seed) if id_size > min_size else id_datasets
         ood_dataset_aligned = RandomSampleWrapper(ood_dataset, min_size, args.seed) if ood_size > min_size else ood_dataset
 
-        aligned_id_loader = torch.utils.data.DataLoader(id_dataset_aligned, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
-        aligned_ood_loader = torch.utils.data.DataLoader(ood_dataset_aligned, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
+        # DataLoader의 num_workers를 줄여서 "Too many open files" 에러 방지
+        reduced_num_workers = min(args.num_workers, 2) if hasattr(args, 'num_workers') and args.num_workers else 0
+        aligned_id_loader = torch.utils.data.DataLoader(id_dataset_aligned, batch_size=args.batch_size, shuffle=False, num_workers=reduced_num_workers)
+        aligned_ood_loader = torch.utils.data.DataLoader(ood_dataset_aligned, batch_size=args.batch_size, shuffle=False, num_workers=reduced_num_workers)
         
         # ID 및 OOD 데이터의 로짓
         id_logits_list = []
