@@ -144,6 +144,7 @@ def save_confusion_matrix_plot(confusion_matrix, labels, args, task_id=None):
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     plt.close()
     print(f"Confusion matrix saved to {save_path}")
+    return save_path
 
 def save_anomaly_histogram(id_scores, ood_scores, args, suffix='', task_id=None):
     plt.figure(figsize=(10, 6))
