@@ -180,10 +180,10 @@ class Engine:
         
         # Logits 통계 시각화 및 저장
         if args.save:
-            stat_path = save_logits_statistics(id_logits, ood_logits, args, task_id if task_id is not None else 0)
+            stat_path, logit_stats = save_logits_statistics(id_logits, ood_logits, args, task_id if task_id is not None else 0)
             if args.wandb:
                 import wandb
-                wandb.log({f"Logits Statistics TASK {task_id}": wandb.Image(stat_path)})
+                wandb.log({f"Logits Stats Plot TASK {task_id}": wandb.Image(stat_path), **logit_stats, "TASK": task_id})
         
         # binary_labels: 0 = OOD, 1 = ID
         binary_labels = np.concatenate([np.ones(id_logits.shape[0]),

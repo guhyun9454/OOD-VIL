@@ -93,23 +93,28 @@ def save_logits_statistics(id_logits, ood_logits, args, task_id):
     plt.savefig(os.path.join(args.save, 'logits_stats', f'task{task_id+1}_logits_distribution.png'))
     plt.close()
     
-    # 통계값 출력 (txt 파일 저장 대신)
+    # 통계값 출력 및 dict 생성
+    id_stats = {
+        'ID_Logits_Mean': float(np.mean(id_mean)),
+        'ID_Logits_Max': float(np.max(id_max)),
+        'ID_Logits_Min': float(np.min(id_min)),
+        'ID_Logits_Std': float(np.mean(id_std)),
+    }
+    ood_stats = {
+        'OOD_Logits_Mean': float(np.mean(ood_mean)),
+        'OOD_Logits_Max': float(np.max(ood_max)),
+        'OOD_Logits_Min': float(np.min(ood_min)),
+        'OOD_Logits_Std': float(np.mean(ood_std)),
+    }
+    stats_dict = {**id_stats, **ood_stats}
+
     print(f"\nTask {task_id+1} Logits Statistics")
     print("="*50)
-    print("ID Data Statistics:")
-    print(f"Mean: {np.mean(id_mean):.4f}")
-    print(f"Max: {np.max(id_max):.4f}")
-    print(f"Min: {np.min(id_min):.4f}")
-    print(f"Std: {np.mean(id_std):.4f}\n")
-    
-    print("OOD Data Statistics:")
-    print(f"Mean: {np.mean(ood_mean):.4f}")
-    print(f"Max: {np.max(ood_max):.4f}")
-    print(f"Min: {np.min(ood_min):.4f}")
-    print(f"Std: {np.mean(ood_std):.4f}")
+    for k, v in stats_dict.items():
+        print(f"{k}: {v:.4f}")
     print("="*50)
 
-    return os.path.join(args.save, 'logits_stats', f'task{task_id+1}_logits_distribution.png')
+    return os.path.join(args.save, 'logits_stats', f'task{task_id+1}_logits_distribution.png'), stats_dict
 
 def save_confusion_matrix_plot(confusion_matrix, labels, args, task_id=None):
     # Task 별 폴더 생성
