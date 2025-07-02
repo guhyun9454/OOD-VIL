@@ -423,3 +423,35 @@ def seed_everything(seed: int = 42):
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
+
+def update_ood_hyperparams(args):
+
+    from OODdetectors import ood_adapter as _oa
+
+
+    # ENERGY
+    _oa._DEFAULT_PARAMS.setdefault("ENERGY", {})["temperature"] = args.energy_temperature
+
+    # GEN (공통: GEN, PRO_GEN)
+    _oa._DEFAULT_PARAMS.setdefault("GEN", {})["gamma"] = args.gen_gamma
+    _oa._DEFAULT_PARAMS.setdefault("GEN", {})["M"] = args.gen_M
+
+    # PRO_GEN
+    _oa._DEFAULT_PARAMS.setdefault("PRO_GEN", {})["gamma"] = args.gen_gamma
+    _oa._DEFAULT_PARAMS.setdefault("PRO_GEN", {})["M"] = args.gen_M
+    _oa._DEFAULT_PARAMS["PRO_GEN"]["noise_level"] = args.pro_gen_noise_level
+    _oa._DEFAULT_PARAMS["PRO_GEN"]["gd_steps"] = args.pro_gen_gd_steps
+
+    # RPO_MSP
+    _oa._DEFAULT_PARAMS.setdefault("RPO_MSP", {})["temperature"] = args.rpo_msp_temperature
+    _oa._DEFAULT_PARAMS["RPO_MSP"]["noise_level"] = args.rpo_msp_noise_level
+    _oa._DEFAULT_PARAMS["RPO_MSP"]["gd_steps"] = args.rpo_msp_gd_steps
+
+    # PRO_MSP_T
+    _oa._DEFAULT_PARAMS.setdefault("PRO_MSP_T", {})["temperature"] = args.pro_msp_t_temperature
+    _oa._DEFAULT_PARAMS["PRO_MSP_T"]["noise_level"] = args.pro_msp_t_noise_level
+    _oa._DEFAULT_PARAMS["PRO_MSP_T"]["gd_steps"] = args.pro_msp_t_gd_steps
+
+    # PRO_ENT
+    _oa._DEFAULT_PARAMS.setdefault("PRO_ENT", {})["noise_level"] = args.pro_ent_noise_level
+    _oa._DEFAULT_PARAMS["PRO_ENT"]["gd_steps"] = args.pro_ent_gd_steps

@@ -166,8 +166,29 @@ if __name__ == '__main__':
     parser.add_argument('--wandb_run', type=str, default=None, help='Wandb run name')
     parser.add_argument('--wandb_project', type=str, default=None, help='Wandb project name')
 
+    # === OOD method hyper-parameters ===
+    parser.add_argument('--energy_temperature', type=float, default=1.0, help='Temperature for ENERGY postprocessor')
+    # GEN
+    parser.add_argument('--gen_gamma', type=float, default=0.1, help='Gamma for GEN / PRO_GEN postprocessor')
+    parser.add_argument('--gen_M', type=int, default=100, help='Top-M probabilities used in GEN / PRO_GEN postprocessor')
+    # PRO-GEN
+    parser.add_argument('--pro_gen_noise_level', type=float, default=1e-4, help='Noise level for PRO_GEN postprocessor')
+    parser.add_argument('--pro_gen_gd_steps', type=int, default=3, help='Gradient descent steps for PRO_GEN postprocessor')
+    # RPO-MSP
+    parser.add_argument('--pro_msp_temperature', type=float, default=1.0, help='Temperature for PRO_MSP postprocessor')
+    parser.add_argument('--pro_msp_noise_level', type=float, default=0.003, help='Noise level for PRO_MSP postprocessor')
+    parser.add_argument('--pro_msp_gd_steps', type=int, default=1, help='Gradient descent steps for PRO_MSP postprocessor')
+    # PRO-MSP-T
+    parser.add_argument('--pro_msp_t_temperature', type=float, default=1.0, help='Temperature for PRO_MSP_T postprocessor')
+    parser.add_argument('--pro_msp_t_noise_level', type=float, default=0.003, help='Noise level for PRO_MSP_T postprocessor')
+    parser.add_argument('--pro_msp_t_gd_steps', type=int, default=1, help='Gradient descent steps for PRO_MSP_T postprocessor')
+    # PRO-ENT
+    parser.add_argument('--pro_ent_noise_level', type=float, default=0.0014, help='Noise level for PRO_ENT postprocessor')
+    parser.add_argument('--pro_ent_gd_steps', type=int, default=2, help='Gradient descent steps for PRO_ENT postprocessor')
+
     args = parser.parse_args()
     Path(args.data_path).mkdir(parents=True, exist_ok=True)
+    utils.update_ood_hyperparams(args)
     main(args)
 
     sys.exit(0)
