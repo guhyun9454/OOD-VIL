@@ -24,7 +24,6 @@ command:
   - OpenOOD
   - --wandb_run
   - sweep_run_${{wandb.run.name}}
-  - --develop
   - ${args}
 
 parameters:
