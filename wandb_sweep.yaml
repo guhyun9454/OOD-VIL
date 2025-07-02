@@ -25,30 +25,7 @@ command:
   - --wandb_run
   - sweep_run_${{wandb.run.name}}
   - --develop
-  - --gen_gamma
-  - ${gen_gamma}
-  - --gen_M
-  - ${gen_M}
-  - --pro_msp_noise_level
-  - ${pro_msp_noise_level}
-  - --pro_msp_gd_steps
-  - ${pro_msp_gd_steps}
-  - --pro_msp_temperature
-  - ${pro_msp_temperature}
-  - --pro_msp_t_noise_level
-  - ${pro_msp_t_noise_level}
-  - --pro_msp_t_gd_steps
-  - ${pro_msp_t_gd_steps}
-  - --pro_msp_t_temperature
-  - ${pro_msp_t_temperature}
-  - --pro_ent_noise_level
-  - ${pro_ent_noise_level}
-  - --pro_ent_gd_steps
-  - ${pro_ent_gd_steps}
-  - --pro_gen_noise_level
-  - ${pro_gen_noise_level}
-  - --pro_gen_gd_steps
-  - ${pro_gen_gd_steps}
+  - ${args}
 
 parameters:
   # GEN / PRO_GEN
