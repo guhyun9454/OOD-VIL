@@ -3,22 +3,13 @@ import torch
 import torch.nn as nn
 
 from .base_postprocessor import BasePostprocessor
-from openood.preprocessors.transform import normalization_dict
 
 class PROv2_ENT_Postprocessor(BasePostprocessor):
-    prob=True
-    def __init__(self, config):
-        self.APS_mode = True
-        self.hyperparam_search_done = False
-        super().__init__(config)
-        self.args = self.config.postprocessor.postprocessor_args
-        self.noise_level = self.args.noise_level
-        try:
-            self.input_std = normalization_dict[self.config.dataset.name][1]
-        except KeyError:
-            self.input_std = [0.5, 0.5, 0.5]
-        self.args_dict = self.config.postprocessor.postprocessor_sweep
-        self.gd_steps = 2  # Gradient descent steps
+    prob = True
+    def __init__(self, noise_level: float = 0.0014, gd_steps: int = 2):
+        super().__init__()
+        self.noise_level = noise_level
+        self.gd_steps = gd_steps  # Gradient descent steps
 
     def postprocess(self, net: nn.Module, data: Any):
         tempInputs = data.clone().detach()
@@ -47,9 +38,9 @@ class PROv2_ENT_Postprocessor(BasePostprocessor):
         min_conf = conf_record_tensor.min(dim=0).values
         return pred, min_conf
 
-    def set_hyperparam(self, hyperparam: list):
-        self.noise_level = hyperparam[0]
-        self.gd_steps = hyperparam[1]
+    def set_hyperparam(self, noise_level: float, gd_steps: int):
+        self.noise_level = noise_level
+        self.gd_steps = gd_steps
 
     def get_hyperparam(self):
         return [self.noise_level, self.gd_steps]

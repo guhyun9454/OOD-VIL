@@ -7,12 +7,10 @@ from .base_postprocessor import BasePostprocessor
 
 
 class GENPostprocessor(BasePostprocessor):
-    def __init__(self, config):
-        super().__init__(config)
-        self.args = self.config.postprocessor.postprocessor_args
-        self.gamma = self.args.gamma
-        self.M = self.args.M
-        self.args_dict = self.config.postprocessor.postprocessor_sweep
+    def __init__(self, gamma: float = 0.1, M: int = 100):
+        super().__init__()
+        self.gamma = gamma
+        self.M = M
 
     @torch.no_grad()
     def postprocess(self, net: nn.Module, data: Any):
@@ -30,9 +28,9 @@ class GENPostprocessor(BasePostprocessor):
         scores = torch.sum(probs_sorted**gamma * (1 - probs_sorted)**(gamma),
                            dim=1)
         return -scores
-    def set_hyperparam(self, hyperparam: list):
-        self.gamma = hyperparam[0]
-        self.M = hyperparam[1]
+    def set_hyperparam(self, gamma: float, M: int):
+        self.gamma = gamma
+        self.M = M
 
     def get_hyperparam(self):
         return [self.gamma, self.M]

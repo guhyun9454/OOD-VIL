@@ -7,11 +7,9 @@ from .base_postprocessor import BasePostprocessor
 
 
 class EBOPostprocessor(BasePostprocessor):
-    def __init__(self, config):
-        super().__init__(config)
-        self.args = self.config.postprocessor.postprocessor_args
-        self.temperature = self.args.temperature
-        self.args_dict = self.config.postprocessor.postprocessor_sweep
+    def __init__(self, temperature: float = 1.0):
+        super().__init__()
+        self.temperature = temperature
 
     @torch.no_grad()
     def postprocess(self, net: nn.Module, data: Any):
@@ -22,8 +20,8 @@ class EBOPostprocessor(BasePostprocessor):
                                                   dim=1)
         return pred, conf
 
-    def set_hyperparam(self, hyperparam: list):
-        self.temperature = hyperparam[0]
+    def set_hyperparam(self, temperature: float):
+        self.temperature = temperature
 
     def get_hyperparam(self):
         return self.temperature

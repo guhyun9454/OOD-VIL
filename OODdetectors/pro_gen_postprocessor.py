@@ -7,14 +7,12 @@ from .base_postprocessor import BasePostprocessor
 
 
 class PRO_GENPostprocessor(BasePostprocessor):
-    def __init__(self, config):
-        super().__init__(config)
-        self.args = self.config.postprocessor.postprocessor_args
-        self.gamma = self.args.gamma
-        self.M = self.args.M
-        self.args_dict = self.config.postprocessor.postprocessor_sweep
-        self.gd_steps=3
-        self.noise_level = 0.0001
+    def __init__(self, gamma: float = 0.1, M: int = 100, noise_level: float = 1e-4, gd_steps: int = 3):
+        super().__init__()
+        self.gamma = gamma
+        self.M = M
+        self.noise_level = noise_level
+        self.gd_steps = gd_steps
 
     def singlepostprocess(self, net: nn.Module, data: Any):
         output = net(data)
@@ -46,16 +44,14 @@ class PRO_GENPostprocessor(BasePostprocessor):
         min_conf = conf_record_tensor.min(dim=0).values
         return unperturbed_pred, min_conf
 
-
-
-    def set_hyperparam(self, hyperparam: list):
-        self.gamma = hyperparam[0]
-        self.M = hyperparam[1]
-        self.noise_level = hyperparam[2]
-        self.gd_steps=hyperparam[3]
+    def set_hyperparam(self, gamma: float, M: int, noise_level: float, gd_steps: int):
+        self.gamma = gamma
+        self.M = M
+        self.noise_level = noise_level
+        self.gd_steps = gd_steps
 
     def get_hyperparam(self):
-        return [self.gamma, self.M,self.noise_level,self.gd_steps]
+        return [self.gamma, self.M, self.noise_level, self.gd_steps]
 
     def generalized_entropy(self, softmax_id_val, gamma=0.1, M=100):
         probs = softmax_id_val

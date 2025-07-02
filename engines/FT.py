@@ -11,6 +11,7 @@ from sklearn.metrics import confusion_matrix
 from utils import save_accuracy_heatmap, save_anomaly_histogram, save_confusion_matrix_plot, save_logits_statistics
 from continual_datasets.dataset_utils import RandomSampleWrapper  
 import matplotlib.pyplot as plt
+from OODdetectors.ood_adapter import compute_ood_scores, SUPPORTED_METHODS
 
 def load_model(args):
     model = create_model(
@@ -129,22 +130,10 @@ class Engine:
     def evaluate_ood(self, model, id_datasets, ood_dataset, device, args, task_id=None):
         model.eval()
         
-        # OOD detection method 선택 (MSP, ENERGY, KL 또는 ALL)
+        # === New unified OOD evaluation (adapter 기반) ===
         ood_method = args.ood_method.upper()
         
-        def MSP(logits):
-            return F.softmax(logits, dim=1).max(dim=1)[0]
-        
-        def ENERGY(logits):
-            return torch.logsumexp(logits, dim=1)
-        
-        def KL(logits):
-            uniform = torch.ones_like(logits) / logits.shape[-1]
-            return F.cross_entropy(logits, uniform, reduction='none')
-        
-        # 데이터셋 샘플 수 맞추기
-        id_size = len(id_datasets)
-        ood_size = len(ood_dataset)
+        id_size, ood_size = len(id_datasets), len(ood_dataset)
         min_size = min(id_size, ood_size)
         if args.develop:
             min_size = 1000
@@ -154,91 +143,41 @@ class Engine:
         id_dataset_aligned = RandomSampleWrapper(id_datasets, min_size, args.seed) if id_size > min_size else id_datasets
         ood_dataset_aligned = RandomSampleWrapper(ood_dataset, min_size, args.seed) if ood_size > min_size else ood_dataset
         
-        aligned_id_loader = torch.utils.data.DataLoader(id_dataset_aligned, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
-        aligned_ood_loader = torch.utils.data.DataLoader(ood_dataset_aligned, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
+        id_loader = torch.utils.data.DataLoader(id_dataset_aligned, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
+        ood_loader = torch.utils.data.DataLoader(ood_dataset_aligned, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
         
-        # ID 및 OOD 데이터의 로짓
-        id_logits_list = []
-        ood_logits_list = []
+        methods = SUPPORTED_METHODS if ood_method == "ALL" else [ood_method]
         
-        with torch.no_grad():
-            # ID 데이터 처리
-            for inputs, _ in aligned_id_loader:
-                inputs = inputs.to(device)
-                logits = model(inputs)
-                id_logits_list.append(logits)
-            
-            # OOD 데이터 처리
-            for inputs, _ in aligned_ood_loader:
-                inputs = inputs.to(device)
-                logits = model(inputs)
-                ood_logits_list.append(logits)
-        
-        # ID 및 OOD 데이터의 로짓 합치기
-        id_logits = torch.cat(id_logits_list, dim=0)
-        ood_logits = torch.cat(ood_logits_list, dim=0)
-        
-        # Logits 통계 시각화 및 저장
-        if args.save:
-            stat_path = save_logits_statistics(id_logits, ood_logits, args, task_id if task_id is not None else 0)
-            if args.wandb:
-                import wandb
-                wandb.log({f"Logits Statistics TASK {task_id}": wandb.Image(stat_path)})
-        
-        # binary_labels: 0 = OOD, 1 = ID
-        binary_labels = np.concatenate([np.ones(id_logits.shape[0]),
-                                       np.zeros(ood_logits.shape[0])])
-        
-        # 실행할 방법들 결정
-        if ood_method == "ALL":
-            methods = ["MSP", "ENERGY", "KL"]
-        else:
-            methods = [ood_method]
-        
+        from sklearn import metrics
         results = {}
         
-        # 각 방법에 대해 평가 실행
         for method in methods:
-            if method == "MSP":
-                id_scores = MSP(id_logits)
-                ood_scores = MSP(ood_logits)
-            elif method == "ENERGY":
-                id_scores = ENERGY(id_logits)
-                ood_scores = ENERGY(ood_logits)
-            elif method == "KL":
-                id_scores = KL(id_logits)
-                ood_scores = KL(ood_logits)
+            id_scores, ood_scores = compute_ood_scores(method, model, id_loader, ood_loader, device)
             
-            # anomaly score 히스토그램 저장 (verbose 모드)
             if args.verbose or args.wandb:
-                hist_path = save_anomaly_histogram(id_scores.cpu().numpy(), ood_scores.cpu().numpy(), args, suffix=method.lower(), task_id=task_id)
+                hist_path = save_anomaly_histogram(id_scores.numpy(), ood_scores.numpy(), args, suffix=method.lower(), task_id=task_id)
                 if args.wandb:
                     import wandb
                     wandb.log({f"Anomaly Histogram TASK {task_id}": wandb.Image(hist_path)})
             
-            all_scores = torch.cat([id_scores, ood_scores], dim=0).cpu().numpy()
+            binary_labels = np.concatenate([np.ones(id_scores.shape[0]), np.zeros(ood_scores.shape[0])])
+            all_scores = np.concatenate([id_scores.numpy(), ood_scores.numpy()])
             
-            # ROC 및 필요한 지표만 계산
-            from sklearn import metrics
             fpr, tpr, _ = metrics.roc_curve(binary_labels, all_scores, drop_intermediate=False)
             auroc = metrics.auc(fpr, tpr)
             idx_tpr95 = np.abs(tpr - 0.95).argmin()
             fpr_at_tpr95 = fpr[idx_tpr95]
             
-            print(f"[{method}]: evaluating metrics...")
-            print(f"AUROC: {auroc * 100:.2f}%, FPR@TPR95: {fpr_at_tpr95 * 100:.2f}%")
+            print(f"[{method}]: AUROC {auroc * 100:.2f}% | FPR@TPR95 {fpr_at_tpr95 * 100:.2f}%")
             if args.wandb:
                 import wandb
                 wandb.log({f"{method}_AUROC (↑)": auroc * 100, f"{method}_FPR@TPR95 (↓)": fpr_at_tpr95 * 100, "TASK": task_id})
             
-            results[method] = {
-                "auroc": auroc,
-                "fpr_at_tpr95": fpr_at_tpr95,
-                "scores": all_scores
-            }
+            results[method] = {"auroc": auroc, "fpr_at_tpr95": fpr_at_tpr95, "scores": all_scores}
         
         return results
-    
+        # === End unified OOD evaluation ===
+
     def evaluate_till_now(self, model, data_loader, device, task_id, class_mask, acc_matrix, args):
         """
         현재까지의 모든 task에 대해 평가하고,
