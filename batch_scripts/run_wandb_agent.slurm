@@ -7,6 +7,8 @@
 #SBATCH --partition=batch_ugrad
 #SBATCH -o logs/%j.out
 
+export WANDB_ENTITY=OODVIL
+export WANDB_PROJECT=OpenOOD
 
 SWEEP_ID=$1
 if [ -z "$SWEEP_ID" ]; then
