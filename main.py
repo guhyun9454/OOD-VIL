@@ -174,7 +174,7 @@ if __name__ == '__main__':
     # PRO-GEN
     parser.add_argument('--pro_gen_noise_level', type=float, default=1e-4, help='Noise level for PRO_GEN postprocessor')
     parser.add_argument('--pro_gen_gd_steps', type=int, default=3, help='Gradient descent steps for PRO_GEN postprocessor')
-    # RPO-MSP
+    # PRO-MSP
     parser.add_argument('--pro_msp_temperature', type=float, default=1.0, help='Temperature for PRO_MSP postprocessor')
     parser.add_argument('--pro_msp_noise_level', type=float, default=0.003, help='Noise level for PRO_MSP postprocessor')
     parser.add_argument('--pro_msp_gd_steps', type=int, default=1, help='Gradient descent steps for PRO_MSP postprocessor')

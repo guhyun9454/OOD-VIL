@@ -442,10 +442,10 @@ def update_ood_hyperparams(args):
     _oa._DEFAULT_PARAMS["PRO_GEN"]["noise_level"] = args.pro_gen_noise_level
     _oa._DEFAULT_PARAMS["PRO_GEN"]["gd_steps"] = args.pro_gen_gd_steps
 
-    # RPO_MSP
-    _oa._DEFAULT_PARAMS.setdefault("RPO_MSP", {})["temperature"] = args.pro_msp_temperature
-    _oa._DEFAULT_PARAMS["RPO_MSP"]["noise_level"] = args.pro_msp_noise_level
-    _oa._DEFAULT_PARAMS["RPO_MSP"]["gd_steps"] = args.pro_msp_gd_steps
+    # PRO_MSP
+    _oa._DEFAULT_PARAMS.setdefault("PRO_MSP", {})["temperature"] = args.pro_msp_temperature
+    _oa._DEFAULT_PARAMS["PRO_MSP"]["noise_level"] = args.pro_msp_noise_level
+    _oa._DEFAULT_PARAMS["PRO_MSP"]["gd_steps"] = args.pro_msp_gd_steps
 
     # PRO_MSP_T
     _oa._DEFAULT_PARAMS.setdefault("PRO_MSP_T", {})["temperature"] = args.pro_msp_t_temperature

@@ -18,7 +18,7 @@ SUPPORTED_METHODS: List[str] = [
     "MSP",
     "ENERGY",
     "GEN",
-    "RPO_MSP",
+    "PRO_MSP",
     "PRO_MSP_T",
     "PRO_ENT",
     "PRO_GEN",
@@ -28,7 +28,7 @@ _DEFAULT_PARAMS = {
     "ENERGY": {"temperature": 1.0},
     "GEN": {"gamma": 0.1, "M": 100},
     "PRO_GEN": {"gamma": 0.1, "M": 100, "noise_level": 1e-4, "gd_steps": 3},
-    "RPO_MSP": {"temperature": 1.0, "noise_level": 0.003, "gd_steps": 1},
+    "PRO_MSP": {"temperature": 1.0, "noise_level": 0.003, "gd_steps": 1},
     "PRO_ENT": {"noise_level": 0.0014, "gd_steps": 2},
     "PRO_MSP_T": {"temperature": 1.0, "noise_level": 0.003, "gd_steps": 1},
 }
@@ -38,7 +38,7 @@ _POSTPROCESSOR_REGISTRY = {
     "ENERGY": EBOPostprocessor,
     "GEN": GENPostprocessor,
     "PRO_GEN": PRO_GENPostprocessor,
-    "RPO_MSP": PROv2_MSP_Postprocessor,
+    "PRO_MSP": PROv2_MSP_Postprocessor,
     "PRO_ENT": PROv2_ENT_Postprocessor,
     "PRO_MSP_T": PROv2_TEMPSCALE_Postprocessor,
 }
