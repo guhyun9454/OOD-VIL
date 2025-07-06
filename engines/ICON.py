@@ -547,7 +547,15 @@ class Engine():
         ood_loader = torch.utils.data.DataLoader(ood_dataset_aligned, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
 
         # 2) 평가할 방법 결정
-        methods = SUPPORTED_METHODS if ood_method == "ALL" else [ood_method]
+        if ood_method == "ALL":
+            methods = SUPPORTED_METHODS
+        else:
+            # 쉼표로 구분된 메소드들 처리
+            methods = [method.strip().upper() for method in ood_method.split(',')]
+            # 지원되지 않는 메소드 확인
+            unsupported = [m for m in methods if m not in SUPPORTED_METHODS]
+            if unsupported:
+                raise ValueError(f"지원되지 않는 OOD 메소드: {unsupported}. 지원되는 메소드: {SUPPORTED_METHODS}")
 
         from sklearn import metrics
         results = {}
