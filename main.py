@@ -60,6 +60,7 @@ def main(args):
     engine = Engine(model=model, device=args.device, class_mask=class_mask, domain_list=domain_list, args=args)
     
     print(args)
+    args.wandb = False
     if args.wandb_run and args.wandb_project:
         import wandb
         import getpass
