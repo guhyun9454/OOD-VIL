@@ -667,7 +667,8 @@ class Engine():
     def evaluate_ood(self, model, id_datasets, ood_dataset, device, args, task_id=None):
         model.eval()
         
-        # === New unified OOD evaluation (adapter 기반) ===
+        vis_task_id = (task_id + 1) 
+ 
         ood_method = args.ood_method.upper()
 
         # 1) 데이터셋 크기 맞추기
@@ -712,10 +713,10 @@ class Engine():
 
             # 시각화 및 로깅
             if args.verbose or args.wandb:
-                hist_path = save_anomaly_histogram(id_scores.numpy(), ood_scores.numpy(), args, suffix=method.lower(), task_id=task_id)
+                hist_path = save_anomaly_histogram(id_scores.numpy(), ood_scores.numpy(), args, suffix=method.lower(), task_id=vis_task_id)
                 if args.wandb:
                     import wandb
-                    wandb.log({f"Anomaly Histogram TASK {task_id}": wandb.Image(hist_path)})
+                    wandb.log({f"Anomaly Histogram TASK {vis_task_id}": wandb.Image(hist_path)})
 
             binary_labels = np.concatenate([np.ones(id_scores.shape[0]), np.zeros(ood_scores.shape[0])])
             all_scores = np.concatenate([id_scores.numpy(), ood_scores.numpy()])
@@ -725,10 +726,10 @@ class Engine():
             idx_tpr95 = np.abs(tpr - 0.95).argmin()
             fpr_at_tpr95 = fpr[idx_tpr95]
 
-            print(f"[{method}]: AUROC {auroc * 100:.2f}% | FPR@TPR95 {fpr_at_tpr95 * 100:.2f}%")
+            print(f"[Task {vis_task_id}] [{method}]: AUROC {auroc * 100:.2f}% | FPR@TPR95 {fpr_at_tpr95 * 100:.2f}%")
             if args.wandb:
                 import wandb
-                wandb.log({f"{method}_AUROC (↑)": auroc * 100, f"{method}_FPR@TPR95 (↓)": fpr_at_tpr95 * 100, "TASK": task_id})
+                wandb.log({f"{method}_AUROC (↑)": auroc * 100, f"{method}_FPR@TPR95 (↓)": fpr_at_tpr95 * 100, "TASK": vis_task_id})
 
             results[method] = {"auroc": auroc, "fpr_at_tpr95": fpr_at_tpr95, "scores": all_scores}
 
