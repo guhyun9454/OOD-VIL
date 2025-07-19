@@ -9,6 +9,7 @@ from pathlib import Path
 from tqdm import tqdm
 
 import torch
+import torch.nn as nn
 import numpy as np
 
 from timm.utils import accuracy
@@ -28,6 +29,28 @@ import joblib
 from continual_datasets.dataset_utils import RandomSampleWrapper
 from utils import save_accuracy_heatmap, save_logits_statistics, save_anomaly_histogram
 from OODdetectors.ood_adapter import compute_ood_scores, SUPPORTED_METHODS
+
+# -------------------------------------------------------------
+# Simple MLP classifier for Task-specific OOD detection (ID vs pOOD)
+# -------------------------------------------------------------
+
+
+class MLPClassifier(nn.Module):
+    """간단한 다층 perceptron(ID:0 vs OOD:1)"""
+
+    def __init__(self, input_dim: int, hidden_dim: int = 256, num_layers: int = 2):
+        super().__init__()
+        layers = []
+        dim_in = input_dim
+        for _ in range(max(1, num_layers - 1)):
+            layers.append(nn.Linear(dim_in, hidden_dim))
+            layers.append(nn.ReLU())
+            dim_in = hidden_dim
+        layers.append(nn.Linear(dim_in, 2))  # 2-way (ID / Not-ID)
+        self.net = nn.Sequential(*layers)
+
+    def forward(self, x):
+        return self.net(x)
 
 def load_model(args):
     if args.dataset == 'CORe50':
@@ -237,6 +260,7 @@ class Engine():
         prev_classes = np.concatenate(self.class_mask[:task_id])
         id_imgs, id_logits = [], []           # original ID samples & logits (for visualization)
         pseudo_imgs, pseudo_logits = [], []   # raw adv images & logits for logging
+        X_pood = []
         for x, _ in id_loader:
             x = x.to(device)
             tgt_indices = torch.randint(0, len(prev_classes), (x.size(0),), device=device)
@@ -324,13 +348,52 @@ class Engine():
         X = np.concatenate([X_id, X_pood])
         y = np.concatenate([y_id, y_pood])
 
+        # -----------------------------
+        #  MLP 분류기 학습 (PyTorch)
+        # -----------------------------
         scaler = StandardScaler().fit(X)
         X_scaled = scaler.transform(X)
-        clf = LogisticRegression(max_iter=1000, random_state=args.seed).fit(X_scaled, y)
 
-        save_path = save_dir / f"clf_{task_id + 1}.pkl"
-        joblib.dump({"scaler": scaler, "clf": clf}, save_path)
-        print(f"Task {task_id + 1} 의 OOD 분류기를 {save_path} 에 저장했습니다.")
+        # 하이퍼파라미터: args 에서 가져오거나 기본값 사용
+        hidden_dim = getattr(args, 'clf_hidden_dim', 256)
+        num_layers = getattr(args, 'clf_num_layers', 2)
+        epochs = getattr(args, 'clf_epochs', 20)
+        lr = getattr(args, 'clf_lr', 1e-3)
+        batch_size = getattr(args, 'clf_batch_size', 128)
+
+        input_dim = X_scaled.shape[1]
+        clf_model = MLPClassifier(input_dim, hidden_dim, num_layers).to(device)
+        optim_clf = torch.optim.Adam(clf_model.parameters(), lr=lr)
+        ce_loss = torch.nn.CrossEntropyLoss()
+
+        dataset_clf = torch.utils.data.TensorDataset(torch.from_numpy(X_scaled).float(), torch.from_numpy(y).long())
+        loader_clf = torch.utils.data.DataLoader(dataset_clf, batch_size=batch_size, shuffle=True)
+
+        for ep in range(epochs):
+            running_loss = 0.0
+            for xb, yb in loader_clf:
+                xb, yb = xb.to(device), yb.to(device)
+                optim_clf.zero_grad()
+                out = clf_model(xb)
+                loss_clf = ce_loss(out, yb)
+                loss_clf.backward()
+                optim_clf.step()
+                running_loss += loss_clf.item() * yb.size(0)
+            if args.verbose:
+                print(f"[Task {task_id+1} OOD-MLP] Epoch {ep+1}/{epochs} Loss: {running_loss/len(dataset_clf):.4f}")
+
+        # -----------------------------
+        #  저장 (.pt)
+        # -----------------------------
+        save_path = save_dir / f"clf_{task_id + 1}.pt"
+        torch.save({
+            "scaler": scaler,
+            "state_dict": clf_model.cpu().state_dict(),
+            "in_dim": input_dim,
+            "hidden_dim": hidden_dim,
+            "num_layers": num_layers,
+        }, save_path)
+        print(f"Task {task_id + 1} 의 OOD MLP 분류기를 {save_path} 에 저장했습니다.")
 
     def _compute_taskclf_scores(self, model, id_loader, ood_loader, device, args, task_id):
         """저장된 Task-specific 분류기 앙상블을 사용해 ID / OOD 점수를 계산"""
@@ -338,7 +401,7 @@ class Engine():
         if not clf_dir.exists():
             raise ValueError("task_clf 디렉토리가 존재하지 않습니다. 먼저 분류기를 학습하세요.")
 
-        pkl_paths = sorted(clf_dir.glob("clf_*.pkl"))
+        pkl_paths = sorted(clf_dir.glob("clf_*.pt"))
         if task_id is not None and task_id > 0:
             pkl_paths = pkl_paths[:task_id + 1]   # 현재 분류기까지 포함
         else:
@@ -347,12 +410,25 @@ class Engine():
         if not pkl_paths:
             raise ValueError(f"[Task {task_id + 1}] 평가할 이전 OOD 분류기가 없습니다.")
 
-        clfs = [joblib.load(p) for p in pkl_paths]
+        clfs = []
+        for p in pkl_paths:
+            d = torch.load(p, map_location='cpu')
+            m = MLPClassifier(d['in_dim'], d['hidden_dim'], d['num_layers'])
+            m.load_state_dict(d['state_dict'])
+            m.eval()
+            clfs.append({'scaler': d['scaler'], 'model': m})
 
         def _score(inputs):
             with torch.no_grad():
                 z = model.forward_features(inputs)[:, 0].cpu().numpy()
-            scores = np.column_stack([d['clf'].predict_proba(d['scaler'].transform(z))[:, 0] for d in clfs])
+            scores_list = []
+            for d in clfs:
+                z_scaled = d['scaler'].transform(z)
+                with torch.no_grad():
+                    out = d['model'](torch.from_numpy(z_scaled).float())
+                    prob_id = torch.softmax(out, dim=1)[:, 0].cpu().numpy()
+                scores_list.append(prob_id)
+            scores = np.column_stack(scores_list)
             return scores.max(1)
 
         id_scores, ood_scores = [], []
