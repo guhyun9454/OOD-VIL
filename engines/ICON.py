@@ -21,6 +21,9 @@ from timm.models import create_model
 import matplotlib.pyplot as plt
 
 from sklearn.metrics import roc_auc_score, confusion_matrix
+from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import StandardScaler
+import joblib
 from continual_datasets.dataset_utils import RandomSampleWrapper
 from utils import save_accuracy_heatmap, save_logits_statistics, save_anomaly_histogram
 from OODdetectors.ood_adapter import compute_ood_scores, SUPPORTED_METHODS
@@ -188,6 +191,113 @@ class Engine():
         weights = torch.tensor(weights)
         weights = weights / torch.sum(weights)  # normalization
         return weights
+
+    # ------------------------------------------------------------------
+    # Task-specific OOD classifier (Logistic Regression) 관련 유틸리티
+    # ------------------------------------------------------------------
+
+    def _extract_cls_features(self, model, loader, device):
+        """ViT CLS 토큰 특징 추출"""
+        feats = []
+        model.eval()
+        with torch.no_grad():
+            for x, _ in loader:
+                x = x.to(device)
+                z = model.forward_features(x)[:, 0]
+                feats.append(z.cpu())
+        return torch.cat(feats).numpy()
+
+    def _targeted_fgsm(self, model, x, target, eps=0.03):
+        """Targeted FGSM 공격으로 pseudo-OOD 샘플 생성"""
+        x_adv = x.clone().detach().requires_grad_(True)
+        out = model(x_adv)
+        loss = F.cross_entropy(out, target)
+        model.zero_grad()
+        loss.backward()
+        x_adv = x_adv - eps * x_adv.grad.sign()
+        return torch.clamp(x_adv.detach(), 0, 1)
+
+    def train_task_ood_classifier(self, model, data_loader, device, args, task_id):
+        """현재 태스크의 ID 데이터를 이용해 Task-specific OOD 분류기를 학습 및 저장"""
+        if task_id == 0:
+            print(f"[Task {task_id + 1}] 이전 태스크가 없어 OOD 분류기를 학습하지 않습니다.")
+            return
+
+        print(f"[Task {task_id + 1}] ID-vs-NotID 구분기 학습 시작")
+
+        id_loader = data_loader[task_id]['train']
+        X_id = self._extract_cls_features(model, id_loader, device)
+        y_id = np.zeros(len(X_id))
+
+        prev_classes = np.concatenate(self.class_mask[:task_id])
+        X_pood = []
+        for x, _ in id_loader:
+            x = x.to(device)
+            tgt_indices = torch.randint(0, len(prev_classes), (x.size(0),), device=device)
+            target_labels = torch.tensor(prev_classes[tgt_indices.cpu()], dtype=torch.long, device=device)
+
+            x_adv = self._targeted_fgsm(model, x, target_labels)
+
+            with torch.no_grad():
+                sel = model(x_adv).argmax(1) == target_labels
+                if sel.any():
+                    z_adv = model.forward_features(x_adv[sel])[:, 0].cpu()
+                    X_pood.append(z_adv)
+
+        if not X_pood:
+            print("경고: Pseudo-OOD 샘플을 생성하지 못했습니다. 분류기 학습을 건너뜁니다.")
+            return
+
+        X_pood = torch.cat(X_pood).numpy()
+        y_pood = np.ones(len(X_pood))
+
+        X = np.concatenate([X_id, X_pood])
+        y = np.concatenate([y_id, y_pood])
+
+        scaler = StandardScaler().fit(X)
+        X_scaled = scaler.transform(X)
+        clf = LogisticRegression(max_iter=1000, random_state=args.seed).fit(X_scaled, y)
+
+        save_dir = Path(args.save) / "task_clf"
+        save_dir.mkdir(exist_ok=True, parents=True)
+        save_path = save_dir / f"clf_{task_id + 1}.pkl"
+        joblib.dump({"scaler": scaler, "clf": clf}, save_path)
+        print(f"Task {task_id + 1} 의 OOD 분류기를 {save_path} 에 저장했습니다.")
+
+    def _compute_taskclf_scores(self, model, id_loader, ood_loader, device, args, task_id):
+        """저장된 Task-specific 분류기 앙상블을 사용해 ID / OOD 점수를 계산"""
+        clf_dir = Path(args.save) / "task_clf"
+        if not clf_dir.exists():
+            raise ValueError("task_clf 디렉토리가 존재하지 않습니다. 먼저 분류기를 학습하세요.")
+
+        pkl_paths = sorted(clf_dir.glob("clf_*.pkl"))
+        if task_id is not None and task_id > 0:
+            pkl_paths = pkl_paths[:task_id]
+        else:
+            pkl_paths = []
+
+        if not pkl_paths:
+            raise ValueError(f"[Task {task_id + 1}] 평가할 이전 OOD 분류기가 없습니다.")
+
+        clfs = [joblib.load(p) for p in pkl_paths]
+
+        def _score(inputs):
+            with torch.no_grad():
+                z = model.forward_features(inputs)[:, 0].cpu().numpy()
+            scores = np.column_stack([d['clf'].predict_proba(d['scaler'].transform(z))[:, 1] for d in clfs])
+            return scores.max(1)
+
+        id_scores, ood_scores = [], []
+        model.eval()
+        with torch.no_grad():
+            for x, _ in id_loader:
+                id_scores.append(_score(x.to(device)))
+            for x, _ in ood_loader:
+                ood_scores.append(_score(x.to(device)))
+
+        id_scores = np.concatenate(id_scores)
+        ood_scores = np.concatenate(ood_scores)
+        return torch.from_numpy(id_scores), torch.from_numpy(ood_scores)
     
     def train_one_epoch(self, model: torch.nn.Module, 
                         criterion, data_loader: Iterable, optimizer: torch.optim.Optimizer,
@@ -499,6 +609,9 @@ class Engine():
                 ood_duration = time.time() - ood_start
                 print(f"OOD evaluation completed in {str(datetime.timedelta(seconds=int(ood_duration)))}")
             
+            # === Task-specific OOD Classifier 학습 ===
+            self.train_task_ood_classifier(model, data_loader, device, args, task_id)
+
             if args.save and utils.is_main_process():
                 Path(os.path.join(args.save, 'checkpoint')).mkdir(parents=True, exist_ok=True)
                 checkpoint_path = os.path.join(args.save, 'checkpoint/task{}_checkpoint.pth'.format(task_id+1))
@@ -561,7 +674,16 @@ class Engine():
         results = {}
 
         for method in methods:
-            id_scores, ood_scores = compute_ood_scores(method, model, id_loader, ood_loader, device)
+            if method == "TASKCLF":
+                # 첫 task에서는 TASKCLF가 존재하지 않으므로 MSP 로 대체
+                if task_id == 0:
+                    print("[TASKCLF] 첫 태스크는 분류기가 없어 MSP로 대체합니다.")
+                    actual_method = "MSP"
+                    id_scores, ood_scores = compute_ood_scores(actual_method, model, id_loader, ood_loader, device)
+                else:
+                    id_scores, ood_scores = self._compute_taskclf_scores(model, id_loader, ood_loader, device, args, task_id)
+            else:
+                id_scores, ood_scores = compute_ood_scores(method, model, id_loader, ood_loader, device)
 
             # 시각화 및 로깅
             if args.verbose or args.wandb:

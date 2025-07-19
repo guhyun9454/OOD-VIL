@@ -24,6 +24,7 @@ SUPPORTED_METHODS: List[str] = [
     "PRO_ENT",
     "PRO_GEN",
     "MAXLOGIT",
+    "TASKCLF",  # Task-specific logistic classifier
 ]
 
 _DEFAULT_PARAMS = {
