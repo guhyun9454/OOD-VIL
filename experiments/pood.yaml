@@ -1,0 +1,40 @@
+program: main.py
+method: random
+parameters:
+  pood_methods:
+    values: ["fgsm", "pgd", "mixup", "gaussian", "fgsm,mixup", "fgsm,gaussian", "pgd,mixup", "pgd,gaussian"]  
+  clf_hidden_dim:
+    values: [128, 256, 512]
+  clf_num_layers:
+    values: [1, 2]
+  clf_lr:
+    distribution: log_uniform
+    min: 1e-4
+    max: 1e-1
+  clf_epochs:
+    values: [50, 100, 200, 400, 800]
+command:
+  - ${env}
+  - python
+  - main.py
+  - --dataset
+  - iDigits
+  - --num_tasks
+  - "20"
+  - --data_path
+  - /local_datasets
+  - --IL_mode
+  - vil
+  - --method
+  - ICON
+  - --seed
+  - "1"
+  - --ood_dataset
+  - EMNIST
+  - --ood_method
+  - TASKCLF
+  - --wandb_project
+  - pood_0719
+  - --wandb_run
+  - pood
+  - ${args}

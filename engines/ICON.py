@@ -241,6 +241,62 @@ class Engine():
         x_adv = x_adv - eps * x_adv.grad.sign()
         return torch.clamp(x_adv.detach(), 0, 1)
 
+    # ------------------------------------------------------------------
+    #  New: 다양한 pseudo-OOD 생성 방법
+    # ------------------------------------------------------------------
+    def _mixup(self, x, alpha=1.0):
+        """Batch 내부에서 Mixup 으로 생성"""
+        lam = np.random.beta(alpha, alpha)
+        perm = torch.randperm(x.size(0), device=x.device)
+        x_mix = lam * x + (1 - lam) * x[perm]
+        return torch.clamp(x_mix, 0, 1)
+
+    def _gaussian_noise(self, x, sigma=0.1):
+        noise = torch.randn_like(x) * sigma
+        return torch.clamp(x + noise, 0, 1)
+
+    def _pgd(self, model, x, target, eps=0.03, alpha=0.01, steps=5):
+        """Targeted PGD 공격"""
+        x_adv = x.clone().detach() + torch.empty_like(x).uniform_(-eps, eps)
+        x_adv = torch.clamp(x_adv, 0, 1)
+        x_adv.requires_grad_(True)
+        for _ in range(steps):
+            out = model(x_adv)
+            loss = F.cross_entropy(out, target)
+            model.zero_grad()
+            if x_adv.grad is not None:
+                x_adv.grad.zero_()
+            loss.backward()
+            x_adv.data = x_adv.data - alpha * x_adv.grad.sign()
+            delta = torch.clamp(x_adv.data - x, min=-eps, max=eps)
+            x_adv.data = torch.clamp(x + delta, 0, 1)
+        return x_adv.detach()
+
+    def _cutout(self, x, ratio=0.5):
+        """임의의 사각형 영역을 0으로 마스킹"""
+        b, c, h, w = x.size()
+        cut_h, cut_w = int(h * ratio), int(w * ratio)
+        cx = torch.randint(0, h, (b,), device=x.device)
+        cy = torch.randint(0, w, (b,), device=x.device)
+        x_out = x.clone()
+        for i in range(b):
+            x1 = torch.clamp(cx[i] - cut_h // 2, 0, h)
+            y1 = torch.clamp(cy[i] - cut_w // 2, 0, w)
+            x2 = torch.clamp(cx[i] + cut_h // 2, 0, h)
+            y2 = torch.clamp(cy[i] + cut_w // 2, 0, w)
+            x_out[i, :, x1:x2, y1:y2] = 0
+        return x_out
+
+    def _colorjitter(self, x, brightness=0.4):
+        """간단한 밝기 변조"""
+        factor = torch.empty(x.size(0), 1, 1, 1, device=x.device).uniform_(1-brightness, 1+brightness)
+        x_j = x * factor
+        return torch.clamp(x_j, 0, 1)
+
+    _SUPPORTED_POOD = [
+        "FGSM", "PGD", "MIXUP", "GAUSSIAN", "CUTOUT", "COLORJITTER"
+    ]
+
     def train_task_ood_classifier(self, model, data_loader, device, args, task_id):
         """현재 태스크의 ID 데이터를 이용해 Task-specific OOD 분류기를 학습 및 저장"""
         if task_id == 0:
@@ -261,29 +317,50 @@ class Engine():
         id_imgs, id_logits = [], []           # original ID samples & logits (for visualization)
         pseudo_imgs, pseudo_logits = [], []   # raw adv images & logits for logging
         X_pood = []
+
+        # 선택된 pseudo-OOD 생성 기법 목록
+        pood_methods = [m.strip().upper() for m in getattr(args, 'pood_methods', 'fgsm').split(',')]
+        for m in pood_methods:
+            if m not in self._SUPPORTED_POOD:
+                raise ValueError(f"지원되지 않는 Pseudo-OOD 방법: {m}. 사용 가능: {self._SUPPORTED_POOD}")
+
         for x, _ in id_loader:
             x = x.to(device)
-            tgt_indices = torch.randint(0, len(prev_classes), (x.size(0),), device=device)
-            target_labels = torch.tensor(prev_classes[tgt_indices.cpu()], dtype=torch.long, device=device)
-
-            # 원본 입력에 대한 로짓 저장
+            # --- ID 로짓 저장 (1회만) ---
             with torch.no_grad():
                 logits_orig = model(x)
 
-            x_adv = self._targeted_fgsm(model, x, target_labels)
+            # target_labels: FGSM 용 (다른 방법도 동일하게 사용)
+            tgt_indices = torch.randint(0, len(prev_classes), (x.size(0),), device=device)
+            target_labels = torch.tensor(prev_classes[tgt_indices.cpu()], dtype=torch.long, device=device)
 
-            with torch.no_grad():
-                logits_adv = model(x_adv)
-                sel = logits_adv.argmax(1) == target_labels
+            for m in pood_methods:
+                # --- pseudo 이미지 생성 ---
+                if m == "FGSM":
+                    x_pood = self._targeted_fgsm(model, x, target_labels)
+                elif m == "PGD":
+                    x_pood = self._pgd(model, x, target_labels)
+                else:
+                    gen_fn = getattr(self, f"_{m.lower()}")
+                    x_pood = gen_fn(x)
+
+                with torch.no_grad():
+                    logits_pood = model(x_pood)
+
+                # FGSM 은 목표 레이블 성공 샘플만 사용, 나머지는 전체 사용
+                if m == "FGSM":
+                    sel = logits_pood.argmax(1) == target_labels
+                else:
+                    sel = torch.ones(x_pood.size(0), dtype=torch.bool, device=x.device)
+
                 if sel.any():
-                    # --- 원본(ID) 이미지 & 로짓 ---
                     id_selected = x[sel].detach().cpu()
                     id_logits_sel = logits_orig[sel].detach().cpu()
                     id_imgs.append(id_selected)
                     id_logits.append(id_logits_sel)
 
-                    sel_imgs = x_adv[sel].detach().cpu()
-                    sel_logits = logits_adv[sel].detach().cpu()
+                    sel_imgs = x_pood[sel].detach().cpu()
+                    sel_logits = logits_pood[sel].detach().cpu()
                     z_adv = model.forward_features(sel_imgs.to(device))[:, 0].cpu()
 
                     X_pood.append(z_adv)
