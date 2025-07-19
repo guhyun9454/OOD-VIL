@@ -623,6 +623,9 @@ class Engine():
             test_stats = self.evaluate_till_now(model=model, data_loader=data_loader, device=device, 
                                                 task_id=task_id, class_mask=class_mask, acc_matrix=acc_matrix, ema_model=ema_model, args=args)
             
+            # === Task-specific OOD Classifier 학습 ===
+            self.train_task_ood_classifier(model, data_loader, device, args, task_id)
+            
             if args.ood_dataset:
                 print(f"{'OOD Evaluation':=^60}")
                 ood_start = time.time()
@@ -633,9 +636,6 @@ class Engine():
                 self.evaluate_ood(model, all_id_datasets, ood_loader, device, args, task_id)
                 ood_duration = time.time() - ood_start
                 print(f"OOD evaluation completed in {str(datetime.timedelta(seconds=int(ood_duration)))}")
-            
-            # === Task-specific OOD Classifier 학습 ===
-            self.train_task_ood_classifier(model, data_loader, device, args, task_id)
 
             if args.save and utils.is_main_process():
                 Path(os.path.join(args.save, 'checkpoint')).mkdir(parents=True, exist_ok=True)
