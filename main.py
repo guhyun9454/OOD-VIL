@@ -154,6 +154,15 @@ if __name__ == '__main__':
     parser.add_argument('--max_tasks', default=None, type=int, help='maximum tasks to process (if set, training/evaluation will stop after this many tasks)')
     parser.add_argument('--IL_mode', type=str, default='cil', choices=['cil', 'dil', 'vil', 'joint'], help='Incremental Learning mode')
 
+    # Pseudo-OOD / Task-specific OOD classifier 하이퍼파라미터
+    parser.add_argument('--pood_methods', type=str, default='fgsm',
+                        help='comma-separated list of pseudo-OOD generation methods (fgsm, pgd, mixup, gaussian, cutout, colorjitter)')
+    parser.add_argument('--clf_hidden_dim', type=int, default=256, help='hidden dimension of task-specific OOD MLP classifier')
+    parser.add_argument('--clf_num_layers', type=int, default=2, help='number of layers of task-specific OOD MLP classifier')
+    parser.add_argument('--clf_lr', type=float, default=1e-3, help='learning rate for task-specific OOD MLP classifier')
+    parser.add_argument('--clf_epochs', type=int, default=20, help='training epochs for task-specific OOD MLP classifier')
+    parser.add_argument('--clf_batch_size', type=int, default=128, help='batch size for task-specific OOD MLP classifier')
+
     # Misc (기타) parameters
     parser.add_argument('--print_freq', type=int, default=1000, help = 'The frequency of printing')
     parser.add_argument('--develop_tasks', '-d', action='store_true', default=False)
