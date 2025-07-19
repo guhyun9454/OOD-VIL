@@ -798,8 +798,13 @@ class Engine():
     def train_and_evaluate(self, model: torch.nn.Module, criterion, data_loader: Iterable, optimizer: torch.optim.Optimizer, 
                            lr_scheduler, device: torch.device, class_mask=None, args=None):
         acc_matrix = np.zeros((args.num_tasks, args.num_tasks))
+        max_tasks = getattr(args, 'max_tasks', args.num_tasks)
         ema_model = None
         for task_id in range(args.num_tasks):
+            # max_tasks 에 도달하면 반복 중단
+            if task_id >= max_tasks:
+                print(f"[ICON] Reached max_tasks={max_tasks}. Stopping training loop early.")
+                break
             if task_id > 0 and args.reinit_optimizer:
                 optimizer = create_optimizer(args, model)
             if task_id == 1 and len(args.adapt_blocks) > 0:

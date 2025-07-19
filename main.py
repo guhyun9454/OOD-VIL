@@ -73,7 +73,8 @@ def main(args):
         print(f"{'Evaluation Only':=^60}")
         acc_matrix = np.zeros((args.num_tasks, args.num_tasks))
 
-        for task_id in range(args.num_tasks):
+        max_tasks = args.max_tasks if args.max_tasks is not None else args.num_tasks
+        for task_id in range(max_tasks):
             checkpoint_path = os.path.join(args.save, 'checkpoint/task{}_checkpoint.pth'.format(task_id+1))
             # 각 엔진에 맞는 체크포인트 로드 로직을 사용
             model = engine.load_checkpoint(model, checkpoint_path)
@@ -150,6 +151,7 @@ if __name__ == '__main__':
 
     # Continual learning parameters
     parser.add_argument('--num_tasks', default=10, type=int, help='number of sequential tasks')
+    parser.add_argument('--max_tasks', default=None, type=int, help='maximum tasks to process (if set, training/evaluation will stop after this many tasks)')
     parser.add_argument('--IL_mode', type=str, default='cil', choices=['cil', 'dil', 'vil', 'joint'], help='Incremental Learning mode')
 
     # Misc (기타) parameters

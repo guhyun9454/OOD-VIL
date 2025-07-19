@@ -8,9 +8,7 @@ parameters:
   clf_num_layers:
     values: [1, 2]
   clf_lr:
-    distribution: log_uniform
-    min: 1e-4
-    max: 1e-1
+    values: [1e-5, 1e-4, 1e-3, 1e-2, 1e-1]
   clf_epochs:
     values: [50, 100, 200, 400, 800]
 command:
@@ -37,4 +35,6 @@ command:
   - pood_0719
   - --wandb_run
   - pood
+  - --max_tasks
+  - "4"
   - ${args}
