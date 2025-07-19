@@ -297,7 +297,7 @@ class Engine():
 
         pkl_paths = sorted(clf_dir.glob("clf_*.pkl"))
         if task_id is not None and task_id > 0:
-            pkl_paths = pkl_paths[:task_id]
+            pkl_paths = pkl_paths[:task_id + 1]   # 현재 분류기까지 포함
         else:
             pkl_paths = []
 
