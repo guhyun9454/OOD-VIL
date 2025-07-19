@@ -277,7 +277,7 @@ class Engine():
 
             # -------- 시각화 & 저장 --------
             import matplotlib.pyplot as plt
-            import math, numpy as np
+            import math
 
             num_examples = min(8, id_imgs_tensor.size(0))
             fig, axes = plt.subplots(2, num_examples, figsize=(num_examples * 2, 4))
