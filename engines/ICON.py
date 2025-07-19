@@ -6,6 +6,7 @@ import datetime
 import json
 from typing import Iterable
 from pathlib import Path
+from tqdm import tqdm
 
 import torch
 import numpy as np
@@ -230,7 +231,8 @@ class Engine():
         y_id = np.zeros(len(X_id))
 
         prev_classes = np.concatenate(self.class_mask[:task_id])
-        X_pood = []
+        X_pood = []  # features
+        pseudo_imgs, pseudo_logits = [], []  # raw adv images & logits for logging
         for x, _ in id_loader:
             x = x.to(device)
             tgt_indices = torch.randint(0, len(prev_classes), (x.size(0),), device=device)
@@ -239,10 +241,31 @@ class Engine():
             x_adv = self._targeted_fgsm(model, x, target_labels)
 
             with torch.no_grad():
-                sel = model(x_adv).argmax(1) == target_labels
+                logits_adv = model(x_adv)
+                sel = logits_adv.argmax(1) == target_labels
                 if sel.any():
-                    z_adv = model.forward_features(x_adv[sel])[:, 0].cpu()
+                    sel_imgs = x_adv[sel].detach().cpu()
+                    sel_logits = logits_adv[sel].detach().cpu()
+                    z_adv = model.forward_features(sel_imgs.to(device))[:, 0].cpu()
+
                     X_pood.append(z_adv)
+                    pseudo_imgs.append(sel_imgs)
+                    pseudo_logits.append(sel_logits)
+
+        # --- Save & log pseudo OOD information --------------------------------
+        if pseudo_imgs:
+            pseudo_imgs_tensor = torch.cat(pseudo_imgs)
+            pseudo_logits_tensor = torch.cat(pseudo_logits)
+
+            pseudo_save_path = save_dir / f"pseudo_ood_task{task_id + 1}.pt"
+            torch.save({"images": pseudo_imgs_tensor, "logits": pseudo_logits_tensor}, pseudo_save_path)
+
+            if args.wandb:
+                import wandb
+                num_preview = min(32, pseudo_imgs_tensor.size(0))
+                preview_imgs = [wandb.Image(img) for img in pseudo_imgs_tensor[:num_preview]]
+                wandb.log({f"Task{task_id}_PseudoOOD_Samples": preview_imgs,
+                           f"Task{task_id}_PseudoOOD_Logits": wandb.Histogram(pseudo_logits_tensor.flatten().numpy())})
 
         if not X_pood:
             print("경고: Pseudo-OOD 샘플을 생성하지 못했습니다. 분류기 학습을 건너뜁니다.")
@@ -284,15 +307,15 @@ class Engine():
         def _score(inputs):
             with torch.no_grad():
                 z = model.forward_features(inputs)[:, 0].cpu().numpy()
-            scores = np.column_stack([d['clf'].predict_proba(d['scaler'].transform(z))[:, 1] for d in clfs])
+            scores = np.column_stack([d['clf'].predict_proba(d['scaler'].transform(z))[:, 0] for d in clfs])
             return scores.max(1)
 
         id_scores, ood_scores = [], []
         model.eval()
         with torch.no_grad():
-            for x, _ in id_loader:
+            for x, _ in tqdm(id_loader, desc="ID"):
                 id_scores.append(_score(x.to(device)))
-            for x, _ in ood_loader:
+            for x, _ in tqdm(ood_loader, desc="OOD"):
                 ood_scores.append(_score(x.to(device)))
 
         id_scores = np.concatenate(id_scores)
@@ -598,9 +621,6 @@ class Engine():
             test_stats = self.evaluate_till_now(model=model, data_loader=data_loader, device=device, 
                                                 task_id=task_id, class_mask=class_mask, acc_matrix=acc_matrix, ema_model=ema_model, args=args)
             
-            # === Task-specific OOD Classifier 학습 ===
-            self.train_task_ood_classifier(model, data_loader, device, args, task_id)
-            
             if args.ood_dataset:
                 print(f"{'OOD Evaluation':=^60}")
                 ood_start = time.time()
@@ -612,6 +632,8 @@ class Engine():
                 ood_duration = time.time() - ood_start
                 print(f"OOD evaluation completed in {str(datetime.timedelta(seconds=int(ood_duration)))}")
             
+            # === Task-specific OOD Classifier 학습 ===
+            self.train_task_ood_classifier(model, data_loader, device, args, task_id)
 
             if args.save and utils.is_main_process():
                 Path(os.path.join(args.save, 'checkpoint')).mkdir(parents=True, exist_ok=True)
