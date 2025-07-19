@@ -224,6 +224,10 @@ class Engine():
             print(f"[Task {task_id + 1}] 이전 태스크가 없어 OOD 분류기를 학습하지 않습니다.")
             return
 
+        # 저장 디렉터리 미리 정의 (다른 로깅에서도 사용)
+        save_dir = Path(args.save) / "task_clf"
+        save_dir.mkdir(exist_ok=True, parents=True)
+
         print(f"[Task {task_id + 1}] ID-vs-NotID 구분기 학습 시작")
 
         id_loader = data_loader[task_id]['train']
@@ -281,8 +285,6 @@ class Engine():
         X_scaled = scaler.transform(X)
         clf = LogisticRegression(max_iter=1000, random_state=args.seed).fit(X_scaled, y)
 
-        save_dir = Path(args.save) / "task_clf"
-        save_dir.mkdir(exist_ok=True, parents=True)
         save_path = save_dir / f"clf_{task_id + 1}.pkl"
         joblib.dump({"scaler": scaler, "clf": clf}, save_path)
         print(f"Task {task_id + 1} 의 OOD 분류기를 {save_path} 에 저장했습니다.")
