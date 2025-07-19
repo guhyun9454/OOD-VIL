@@ -235,12 +235,16 @@ class Engine():
         y_id = np.zeros(len(X_id))
 
         prev_classes = np.concatenate(self.class_mask[:task_id])
-        X_pood = []  # features
-        pseudo_imgs, pseudo_logits = [], []  # raw adv images & logits for logging
+        id_imgs, id_logits = [], []           # original ID samples & logits (for visualization)
+        pseudo_imgs, pseudo_logits = [], []   # raw adv images & logits for logging
         for x, _ in id_loader:
             x = x.to(device)
             tgt_indices = torch.randint(0, len(prev_classes), (x.size(0),), device=device)
             target_labels = torch.tensor(prev_classes[tgt_indices.cpu()], dtype=torch.long, device=device)
+
+            # 원본 입력에 대한 로짓 저장
+            with torch.no_grad():
+                logits_orig = model(x)
 
             x_adv = self._targeted_fgsm(model, x, target_labels)
 
@@ -248,6 +252,12 @@ class Engine():
                 logits_adv = model(x_adv)
                 sel = logits_adv.argmax(1) == target_labels
                 if sel.any():
+                    # --- 원본(ID) 이미지 & 로짓 ---
+                    id_selected = x[sel].detach().cpu()
+                    id_logits_sel = logits_orig[sel].detach().cpu()
+                    id_imgs.append(id_selected)
+                    id_logits.append(id_logits_sel)
+
                     sel_imgs = x_adv[sel].detach().cpu()
                     sel_logits = logits_adv[sel].detach().cpu()
                     z_adv = model.forward_features(sel_imgs.to(device))[:, 0].cpu()
@@ -261,15 +271,48 @@ class Engine():
             pseudo_imgs_tensor = torch.cat(pseudo_imgs)
             pseudo_logits_tensor = torch.cat(pseudo_logits)
 
-            pseudo_save_path = save_dir / f"pseudo_ood_task{task_id + 1}.pt"
-            torch.save({"images": pseudo_imgs_tensor, "logits": pseudo_logits_tensor}, pseudo_save_path)
+            # --- 원본 ID 텐서도 연결 ---
+            id_imgs_tensor = torch.cat(id_imgs)
+            id_logits_tensor = torch.cat(id_logits)
 
+            # -------- 시각화 & 저장 --------
+            import matplotlib.pyplot as plt
+            import math, numpy as np
+
+            num_examples = min(8, id_imgs_tensor.size(0))
+            fig, axes = plt.subplots(2, num_examples, figsize=(num_examples * 2, 4))
+            for idx in range(num_examples):
+                # ID 이미지
+                img_id = id_imgs_tensor[idx]
+                img_id_np = img_id.permute(1, 2, 0).numpy()
+                img_id_np = np.clip(img_id_np, 0, 1)
+                axes[0, idx].imshow(img_id_np)
+                axes[0, idx].axis('off')
+                id_pred = int(id_logits_tensor[idx].argmax().item())
+                axes[0, idx].set_title(f"ID | pred:{id_pred}\nmax: {id_logits_tensor[idx].max():.2f}")
+
+                # pOOD 이미지
+                img_pood = pseudo_imgs_tensor[idx]
+                img_pood_np = img_pood.permute(1, 2, 0).numpy()
+                img_pood_np = np.clip(img_pood_np, 0, 1)
+                axes[1, idx].imshow(img_pood_np)
+                axes[1, idx].axis('off')
+                pood_pred = int(pseudo_logits_tensor[idx].argmax().item())
+                axes[1, idx].set_title(f"pOOD | pred:{pood_pred}\nmax: {pseudo_logits_tensor[idx].max():.2f}")
+
+            plt.tight_layout()
+            fig_path = save_dir / f"pseudo_ood_comparison_task{task_id + 1}.png"
+            plt.savefig(fig_path)
+            plt.close(fig)
+
+            # -------- wandb 로깅 --------
             if args.wandb:
                 import wandb
                 num_preview = min(32, pseudo_imgs_tensor.size(0))
                 preview_imgs = [wandb.Image(img) for img in pseudo_imgs_tensor[:num_preview]]
-                wandb.log({f"Task{task_id}_PseudoOOD_Samples": preview_imgs,
-                           f"Task{task_id}_PseudoOOD_Logits": wandb.Histogram(pseudo_logits_tensor.flatten().numpy())})
+                wandb.log({
+                    f"Task{task_id}_PseudoOOD_Comparison": wandb.Image(str(fig_path))
+                })
 
         if not X_pood:
             print("경고: Pseudo-OOD 샘플을 생성하지 못했습니다. 분류기 학습을 건너뜁니다.")
