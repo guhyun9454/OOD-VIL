@@ -380,7 +380,7 @@ class Engine():
         dataset_clf = torch.utils.data.TensorDataset(torch.from_numpy(X).float(), torch.from_numpy(y).float())
         loader_clf = torch.utils.data.DataLoader(dataset_clf, batch_size=batch_size, shuffle=True)
 
-        for ep in range(epochs):
+        for ep in tqdm(range(epochs), desc="Training Task-specific OOD Classifier"):
             running_loss = 0.0
             for xb, yb in loader_clf:
                 xb, yb = xb.to(device), yb.to(device)
