@@ -359,7 +359,7 @@ class Engine():
 
         X_pood = torch.cat(X_pood).numpy()
         y_pood = np.zeros(len(X_pood))
-
+        print("X_id, X_pood",len(X_id),len(X_pood))
         X = np.concatenate([X_id, X_pood])
         y = np.concatenate([y_id, y_pood])
 
