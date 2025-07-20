@@ -359,7 +359,15 @@ class Engine():
 
         X_pood = torch.cat(X_pood).numpy()
         y_pood = np.zeros(len(X_pood))
-        print("X_id, X_pood",len(X_id),len(X_pood))
+        # --- Balance positive(ID) and negative(pOOD) sample counts ---
+        min_size = min(len(X_id), len(X_pood))
+        if len(X_id) != len(X_pood):
+            rng = np.random.RandomState(args.seed)
+            id_idx = rng.choice(len(X_id), min_size, replace=False)
+            pood_idx = rng.choice(len(X_pood), min_size, replace=False) if len(X_pood) > min_size else np.arange(len(X_pood))
+            X_id, y_id = X_id[id_idx], y_id[id_idx]
+            X_pood, y_pood = X_pood[pood_idx], y_pood[pood_idx]
+        print(f"Balanced samples → ID:{len(X_id)}  pOOD:{len(X_pood)}")
         X = np.concatenate([X_id, X_pood])
         y = np.concatenate([y_id, y_pood])
 
@@ -380,7 +388,7 @@ class Engine():
         dataset_clf = torch.utils.data.TensorDataset(torch.from_numpy(X).float(), torch.from_numpy(y).float())
         loader_clf = torch.utils.data.DataLoader(dataset_clf, batch_size=batch_size, shuffle=True)
 
-        for ep in tqdm(range(epochs), desc="Training Task-specific OOD Classifier"):
+        for ep in range(epochs):
             running_loss = 0.0
             for xb, yb in loader_clf:
                 xb, yb = xb.to(device), yb.to(device)
