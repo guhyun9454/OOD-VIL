@@ -232,18 +232,26 @@ class Engine():
         return torch.cat(feats).numpy()
 
     def _targeted_fgsm(self, model, x, target, eps=0.03):
-        """Targeted FGSM 공격으로 pseudo-OOD 샘플 생성"""
-        x_adv = x.clone().detach().requires_grad_(True)
-        out = model(x_adv)
-        loss = F.cross_entropy(out, target)
-        model.zero_grad()
-        loss.backward()
-        x_adv = x_adv - eps * x_adv.grad.sign()
-        return torch.clamp(x_adv.detach(), 0, 1)
+        param_requires_grad = []
+        for p in model.parameters():
+            param_requires_grad.append(p.requires_grad)
+            p.requires_grad_(False)
 
-    # ------------------------------------------------------------------
-    #  New: 다양한 pseudo-OOD 생성 방법
-    # ------------------------------------------------------------------
+        x_adv = x.clone().detach().requires_grad_(True)
+
+        with torch.enable_grad():
+            out = model(x_adv)
+            loss = F.cross_entropy(out, target)
+            grad_x, = torch.autograd.grad(loss, x_adv, only_inputs=True, retain_graph=False)
+
+        x_adv = x_adv - eps * grad_x.sign()
+        x_adv = torch.clamp(x_adv.detach(), 0, 1)
+
+        for p, req in zip(model.parameters(), param_requires_grad):
+            p.requires_grad_(req)
+
+        return x_adv
+
     def _mixup(self, x, alpha=1.0):
         """Batch 내부에서 Mixup 으로 생성"""
         lam = np.random.beta(alpha, alpha)
