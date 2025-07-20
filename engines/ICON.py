@@ -23,9 +23,7 @@ from timm.models import create_model
 import matplotlib.pyplot as plt
 
 from sklearn.metrics import roc_auc_score, confusion_matrix
-from sklearn.linear_model import LogisticRegression
-from sklearn.preprocessing import StandardScaler
-import joblib
+# (sklearn 의존 제거) LogisticRegression, StandardScaler, joblib 제거
 from continual_datasets.dataset_utils import RandomSampleWrapper
 from utils import save_accuracy_heatmap, save_logits_statistics, save_anomaly_histogram
 from OODdetectors.ood_adapter import compute_ood_scores, SUPPORTED_METHODS
@@ -51,6 +49,22 @@ class MLPClassifier(nn.Module):
 
     def forward(self, x):
         return self.net(x)
+
+
+# ---------------------------------------------------------------------------
+#  Simple Linear Binary Classifier (ID:1 vs OOD:0)
+# ---------------------------------------------------------------------------
+
+
+class LinearBinaryClassifier(nn.Module):
+    """단순 선형 분류기 (출력 1-logit)"""
+
+    def __init__(self, input_dim: int):
+        super().__init__()
+        self.fc = nn.Linear(input_dim, 1)
+
+    def forward(self, x):
+        return self.fc(x).squeeze(-1)  # (batch,)
 
 def load_model(args):
     if args.dataset == 'CORe50':
@@ -255,7 +269,8 @@ class Engine():
 
         id_loader = data_loader[task_id]['train']
         X_id = self._extract_cls_features(model, id_loader, device)
-        y_id = np.zeros(len(X_id))
+        # ID 를 1, pseudo-OOD 를 0 으로 설정
+        y_id = np.ones(len(X_id))
 
         prev_classes = np.concatenate(self.class_mask[:task_id])
         id_imgs, id_logits = [], []           # original ID samples & logits (for visualization)
@@ -343,7 +358,7 @@ class Engine():
             return
 
         X_pood = torch.cat(X_pood).numpy()
-        y_pood = np.ones(len(X_pood))
+        y_pood = np.zeros(len(X_pood))
 
         X = np.concatenate([X_id, X_pood])
         y = np.concatenate([y_id, y_pood])
@@ -351,22 +366,18 @@ class Engine():
         # -----------------------------
         #  MLP 분류기 학습 (PyTorch)
         # -----------------------------
-        scaler = StandardScaler().fit(X)
-        X_scaled = scaler.transform(X)
-
         # 하이퍼파라미터: args 에서 가져오거나 기본값 사용
-        hidden_dim = getattr(args, 'clf_hidden_dim', 256)
-        num_layers = getattr(args, 'clf_num_layers', 2)
         epochs = getattr(args, 'clf_epochs', 20)
         lr = getattr(args, 'clf_lr', 1e-3)
         batch_size = getattr(args, 'clf_batch_size', 128)
+        score_type = getattr(args, 'clf_score_type', 'sigmoid').lower()  # 'logit' or 'sigmoid'
 
-        input_dim = X_scaled.shape[1]
-        clf_model = MLPClassifier(input_dim, hidden_dim, num_layers).to(device)
+        input_dim = X.shape[1]
+        clf_model = LinearBinaryClassifier(input_dim).to(device)
         optim_clf = torch.optim.Adam(clf_model.parameters(), lr=lr)
-        ce_loss = torch.nn.CrossEntropyLoss()
+        bce_loss = torch.nn.BCEWithLogitsLoss()
 
-        dataset_clf = torch.utils.data.TensorDataset(torch.from_numpy(X_scaled).float(), torch.from_numpy(y).long())
+        dataset_clf = torch.utils.data.TensorDataset(torch.from_numpy(X).float(), torch.from_numpy(y).float())
         loader_clf = torch.utils.data.DataLoader(dataset_clf, batch_size=batch_size, shuffle=True)
 
         for ep in range(epochs):
@@ -375,11 +386,10 @@ class Engine():
                 xb, yb = xb.to(device), yb.to(device)
                 optim_clf.zero_grad()
                 out = clf_model(xb)
-                loss_clf = ce_loss(out, yb)
+                loss_clf = bce_loss(out, yb)
                 loss_clf.backward()
                 optim_clf.step()
                 running_loss += loss_clf.item() * yb.size(0)
-            if args.verbose:
                 print(f"[Task {task_id+1} OOD-MLP] Epoch {ep+1}/{epochs} Loss: {running_loss/len(dataset_clf):.4f}")
 
         # -----------------------------
@@ -387,11 +397,9 @@ class Engine():
         # -----------------------------
         save_path = save_dir / f"clf_{task_id + 1}.pt"
         torch.save({
-            "scaler": scaler,
             "state_dict": clf_model.cpu().state_dict(),
             "in_dim": input_dim,
-            "hidden_dim": hidden_dim,
-            "num_layers": num_layers,
+            "score_type": score_type,  # 저장해 두었다가 inference 시 사용
         }, save_path)
         print(f"Task {task_id + 1} 의 OOD MLP 분류기를 {save_path} 에 저장했습니다.")
 
@@ -413,21 +421,23 @@ class Engine():
         clfs = []
         for p in pkl_paths:
             d = torch.load(p, map_location='cpu')
-            m = MLPClassifier(d['in_dim'], d['hidden_dim'], d['num_layers'])
+            m = LinearBinaryClassifier(d['in_dim'])
             m.load_state_dict(d['state_dict'])
             m.eval()
-            clfs.append({'scaler': d['scaler'], 'model': m})
+            clfs.append({'model': m, 'score_type': d.get('score_type', 'sigmoid')})
 
         def _score(inputs):
             with torch.no_grad():
                 z = model.forward_features(inputs)[:, 0].cpu().numpy()
             scores_list = []
             for d in clfs:
-                z_scaled = d['scaler'].transform(z)
                 with torch.no_grad():
-                    out = d['model'](torch.from_numpy(z_scaled).float())
-                    prob_id = torch.softmax(out, dim=1)[:, 0].cpu().numpy()
-                scores_list.append(prob_id)
+                    out = d['model'](torch.from_numpy(z).float())
+                if d['score_type'] == 'logit':
+                    score = out.cpu().numpy()
+                else:
+                    score = torch.sigmoid(out).cpu().numpy()
+                scores_list.append(score)
             scores = np.column_stack(scores_list)
             return scores.max(1)
 
