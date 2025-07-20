@@ -390,7 +390,7 @@ class Engine():
                 loss_clf.backward()
                 optim_clf.step()
                 running_loss += loss_clf.item() * yb.size(0)
-                print(f"[Task {task_id+1} OOD-MLP] Epoch {ep+1}/{epochs} Loss: {running_loss/len(dataset_clf):.4f}")
+            print(f"[Task {task_id+1} OOD-MLP] Epoch {ep+1}/{epochs} Loss: {running_loss/len(dataset_clf):.4f}")
 
         # -----------------------------
         #  저장 (.pt)
