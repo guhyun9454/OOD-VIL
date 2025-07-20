@@ -1,0 +1,34 @@
+program: main.py
+method: random
+parameters:
+  clf_lr:
+    values: [1e-3, 1e-2, 1e-1]
+  clf_epochs:
+    values: [10, 20, 40, 60, 80, 100]
+  clf_score_type:
+    values: ["sigmoid", "logit"]
+command:
+  - ${env}
+  - python
+  - main.py
+  - --dataset
+  - iDigits
+  - --num_tasks
+  - "20"
+  - --data_path
+  - /local_datasets
+  - --IL_mode
+  - vil
+  - --method
+  - ICON
+  - --seed
+  - "1"
+  - --ood_dataset
+  - EMNIST
+  - --ood_method
+  - TASKCLF
+  - --wandb_project
+  - pood_0719
+  - --wandb_run
+  - pood
+  - ${args}
