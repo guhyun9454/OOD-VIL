@@ -239,16 +239,23 @@ class Engine():
 
         x_adv = x.clone().detach().requires_grad_(True)
 
-        with torch.enable_grad():
-            out = model(x_adv)
-            loss = F.cross_entropy(out, target)
-            grad_x, = torch.autograd.grad(loss, x_adv, only_inputs=True, retain_graph=False)
+        with torch.cuda.amp.autocast():
+            with torch.enable_grad():
+                out = model(x_adv)
+                loss = F.cross_entropy(out, target)
+        # 입력 gradient만 계산 (fp32로 변환 필요)
+        grad_x, = torch.autograd.grad(loss.float(), x_adv, only_inputs=True, retain_graph=False)
 
         x_adv = x_adv - eps * grad_x.sign()
         x_adv = torch.clamp(x_adv.detach(), 0, 1)
 
+        # 파라미터 requires_grad 복원
         for p, req in zip(model.parameters(), param_requires_grad):
             p.requires_grad_(req)
+
+        # 불필요한 텐서 메모리 해제
+        del out, loss, grad_x
+        torch.cuda.empty_cache()
 
         return x_adv
 
