@@ -187,6 +187,12 @@ if __name__ == '__main__':
     parser.add_argument('--pro_ent_noise_level', type=float, default=0.0014, help='Noise level for PRO_ENT postprocessor')
     parser.add_argument('--pro_ent_gd_steps', type=int, default=2, help='Gradient descent steps for PRO_ENT postprocessor')
 
+    # === Task-specific OOD classifier hyper-parameters ===
+    parser.add_argument('--clf_epochs', type=int, default=20, help='Epochs for task OOD classifier')
+    parser.add_argument('--clf_lr', type=float, default=1e-3, help='Learning rate for task OOD classifier')
+    parser.add_argument('--clf_batch_size', type=int, default=128, help='Batch size for task OOD classifier')
+    parser.add_argument('--clf_score_type', type=str, default='sigmoid', choices=['sigmoid', 'logit'], help='Score type to use for OOD scoring (sigmoid | logit)')
+
     args = parser.parse_args()
     Path(args.data_path).mkdir(parents=True, exist_ok=True)
     utils.update_ood_hyperparams(args)
