@@ -276,7 +276,7 @@ class Engine():
         id_imgs, id_logits = [], []           # original ID samples & logits (for visualization)
         pseudo_imgs, pseudo_logits = [], []   # raw adv images & logits for logging
         X_pood = []
-        for x, _ in id_loader:
+        for x, _ in tqdm(id_loader, desc="Generating Pseudo-OOD Samples"):
             x = x.to(device)
             tgt_indices = torch.randint(0, len(prev_classes), (x.size(0),), device=device)
             target_labels = torch.tensor(prev_classes[tgt_indices.cpu()], dtype=torch.long, device=device)
@@ -320,7 +320,7 @@ class Engine():
 
             num_examples = min(8, id_imgs_tensor.size(0))
             fig, axes = plt.subplots(2, num_examples, figsize=(num_examples * 2, 4))
-            for idx in range(num_examples):
+            for idx in tqdm(range(num_examples), desc="Visualizing Pseudo-OOD Samples"):
                 # ID 이미지
                 img_id = id_imgs_tensor[idx]
                 img_id_np = img_id.permute(1, 2, 0).numpy()
