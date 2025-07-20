@@ -161,7 +161,7 @@ if __name__ == '__main__':
     parser.add_argument('--clf_num_layers', type=int, default=2, help='number of layers of task-specific OOD MLP classifier')
     parser.add_argument('--clf_lr', type=float, default=1e-3, help='learning rate for task-specific OOD MLP classifier')
     parser.add_argument('--clf_epochs', type=int, default=20, help='training epochs for task-specific OOD MLP classifier')
-    parser.add_argument('--clf_batch_size', type=int, default=128, help='batch size for task-specific OOD MLP classifier')
+    parser.add_argument('--clf_batch_size', type=int, default=64, help='batch size for task-specific OOD MLP classifier')
 
     # Misc (기타) parameters
     parser.add_argument('--print_freq', type=int, default=1000, help = 'The frequency of printing')

@@ -239,12 +239,10 @@ class Engine():
 
         x_adv = x.clone().detach().requires_grad_(True)
 
-        with torch.cuda.amp.autocast():
-            with torch.enable_grad():
-                out = model(x_adv)
-                loss = F.cross_entropy(out, target)
-        # 입력 gradient만 계산 (fp32로 변환 필요)
-        grad_x, = torch.autograd.grad(loss.float(), x_adv, only_inputs=True, retain_graph=False)
+        with torch.enable_grad():
+            out = model(x_adv)
+            loss = F.cross_entropy(out, target)
+            grad_x, = torch.autograd.grad(loss, x_adv, only_inputs=True, retain_graph=False)
 
         x_adv = x_adv - eps * grad_x.sign()
         x_adv = torch.clamp(x_adv.detach(), 0, 1)
@@ -271,21 +269,44 @@ class Engine():
         return torch.clamp(x + noise, 0, 1)
 
     def _pgd(self, model, x, target, eps=0.03, alpha=0.01, steps=5):
-        """Targeted PGD 공격"""
+        """Targeted PGD 공격 (메모리 최적화 버전)"""
+
+        # 1) 모델 파라미터 gradient 비활성화
+        param_requires_grad = []
+        for p in model.parameters():
+            param_requires_grad.append(p.requires_grad)
+            p.requires_grad_(False)
+
+        # 2) 초기 adversarial 예제 생성
         x_adv = x.clone().detach() + torch.empty_like(x).uniform_(-eps, eps)
         x_adv = torch.clamp(x_adv, 0, 1)
-        x_adv.requires_grad_(True)
+
         for _ in range(steps):
-            out = model(x_adv)
-            loss = F.cross_entropy(out, target)
-            model.zero_grad()
-            if x_adv.grad is not None:
-                x_adv.grad.zero_()
-            loss.backward()
-            x_adv.data = x_adv.data - alpha * x_adv.grad.sign()
-            delta = torch.clamp(x_adv.data - x, min=-eps, max=eps)
-            x_adv.data = torch.clamp(x + delta, 0, 1)
-        return x_adv.detach()
+            x_adv.requires_grad_(True)
+
+            with torch.cuda.amp.autocast():
+                out = model(x_adv)
+                loss = F.cross_entropy(out, target)
+
+            # 입력 gradient 계산 (float32)
+            grad_x, = torch.autograd.grad(loss.float(), x_adv, only_inputs=True, retain_graph=False)
+
+            # FGSM step
+            x_adv = x_adv.detach() - alpha * grad_x.sign()
+
+            # Projection 및 clipping
+            delta = torch.clamp(x_adv - x, min=-eps, max=eps)
+            x_adv = torch.clamp(x + delta, 0, 1).detach()
+
+            # 메모리 정리
+            del out, loss, grad_x
+            torch.cuda.empty_cache()
+
+        # 3) 파라미터 requires_grad 복원
+        for p, req in zip(model.parameters(), param_requires_grad):
+            p.requires_grad_(req)
+
+        return x_adv
 
     def _cutout(self, x, ratio=0.5):
         """임의의 사각형 영역을 0으로 마스킹"""
