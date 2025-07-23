@@ -48,7 +48,9 @@ def main(args):
     if args.ood_dataset:
         data_loader[-1]['ood'] = get_ood_dataset(args.ood_dataset, args)
 
-    if args.develop_tasks: return
+    if args.develop_tasks:
+        utils.visualize_samples(args, data_loader, class_mask, domain_list)
+        return
 
     try:
         engine_module = importlib.import_module(f"engines.{args.method}")

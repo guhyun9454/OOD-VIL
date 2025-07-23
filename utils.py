@@ -455,3 +455,224 @@ def update_ood_hyperparams(args):
     # PRO_ENT
     _oa._DEFAULT_PARAMS.setdefault("PRO_ENT", {})["noise_level"] = args.pro_ent_noise_level
     _oa._DEFAULT_PARAMS["PRO_ENT"]["gd_steps"] = args.pro_ent_gd_steps
+
+# ====== 샘플 시각화 유틸리티 ======
+
+def _save_grid_chunk(chunk_imgs, chunk_titles, save_path, cols: int, dpi: int = 100):
+    """내부 함수: 주어진 이미지/타이틀 목록을 하나의 그림으로 저장"""
+    import math
+    import matplotlib.pyplot as plt
+
+    rows = math.ceil(len(chunk_imgs) / cols)
+    # fig 크기는 rows, cols 에 비례하되 너무 커지지 않도록 1.8 inch 스케일 사용
+    fig, axes = plt.subplots(rows, cols, figsize=(cols * 1.8, rows * 1.8))
+
+    # axes 가 1D 로 반환될 수 있는 경우(rows==1 또는 cols==1) 대비
+    if isinstance(axes, np.ndarray):
+        if axes.ndim == 1:
+            axes = np.expand_dims(axes, 0 if rows == 1 else 1)
+    else:  # 단일 Axes 객체
+        axes = np.array([[axes]])
+
+    for idx in range(rows * cols):
+        ax = axes[idx // cols, idx % cols]
+        if idx < len(chunk_imgs):
+            img = chunk_imgs[idx]
+            try:
+                # Torch Tensor 처리
+                if isinstance(img, torch.Tensor):
+                    img = img.detach().cpu()
+                    if img.ndim == 3:
+                        img = img.permute(1, 2, 0)  # CHW -> HWC
+                    img = img.numpy()
+                    # 범위 조정 (0~1 or 0~255)
+                    if img.max() > 1.0:
+                        img = img / 255.0
+                # numpy ndarray 처리 (Tensor가 아닌 경우)
+                elif isinstance(img, np.ndarray):
+                    if img.ndim == 3 and img.shape[0] in (1, 3):
+                        img = np.transpose(img, (1, 2, 0))  # CHW -> HWC
+                        if img.shape[2] == 1:  # Grayscale 채널 제거
+                            img = img.squeeze(2)
+                    if img.max() > 1.0:
+                        img = img / 255.0
+                ax.imshow(img)
+            except Exception as e:
+                # 마지막 fallback: numpy 변환 후 시도
+                try:
+                    ax.imshow(np.array(img))
+                except Exception:
+                    print(f"[Warning] 이미지 표시 실패 (index {idx}): {e}")
+            ax.set_title(chunk_titles[idx], fontsize=6)
+            ax.axis("off")
+        else:
+            ax.axis("off")
+    plt.tight_layout()
+    fig.savefig(save_path, dpi=dpi)
+    plt.close(fig)
+
+
+def plot_grid(images, titles, save_path, cols: int = 10, dpi: int = 100):
+    """이미지들을 그리드 형태로 저장하되, 너무 큰 그림은 자동 분할합니다.
+
+    Args:
+        images (List[PIL.Image]): 이미지 객체 리스트
+        titles (List[str]): 각 이미지에 대한 제목(캡션)
+        save_path (str): 저장 경로 (확장자 포함). 여러 파트로 분할 시 _part{n}.png 추가됨.
+        cols (int): 한 행에 배치할 열 수
+        dpi (int): 저장 DPI (기본 100)
+    """
+    import math, os
+
+    assert len(images) == len(titles), "images와 titles의 길이가 다릅니다."
+
+    max_pixels = 65000  # matplotlib 한 변 제한 (2**16)
+    max_rows = max_pixels // (2 * dpi)  # 각 행 높이를 2 inch 로 가정
+
+    rows_total = math.ceil(len(images) / cols)
+
+    # 분할이 필요한지 확인
+    if rows_total <= max_rows:
+        _save_grid_chunk(images, titles, save_path, cols, dpi)
+        return
+
+    # 분할 저장
+    chunk_size = cols * max_rows  # 한 파트당 최대 이미지 수
+    num_parts = math.ceil(len(images) / chunk_size)
+
+    base, ext = os.path.splitext(save_path)
+    for part_idx in range(num_parts):
+        start = part_idx * chunk_size
+        end = min((part_idx + 1) * chunk_size, len(images))
+        chunk_imgs = images[start:end]
+        chunk_titles = titles[start:end]
+        part_save_path = f"{base}_part{part_idx+1}{ext}"
+        _save_grid_chunk(chunk_imgs, chunk_titles, part_save_path, cols, dpi)
+        print(f"Saved grid part {part_idx+1}/{num_parts} -> {part_save_path}")
+
+
+def visualize_samples(args, data_loader, class_mask, domain_list):
+    """ID / OOD 샘플을 모아 그리드 이미지로 저장합니다.
+
+    - ID: 도메인-클래스 조합당 하나씩
+    - OOD: 클래스당 하나씩
+    """
+    from pathlib import Path
+    from PIL import Image
+    from collections import defaultdict
+    import torch
+
+    save_dir = os.path.join(args.save, "sample_visualization")
+    Path(save_dir).mkdir(parents=True, exist_ok=True)
+
+    domain_to_classimages: dict[str, dict[str, "Image"]] = defaultdict(dict)
+
+    for t_idx, task in enumerate(data_loader[: args.num_tasks]):
+        domain = domain_list[t_idx] if domain_list is not None else f"D{t_idx}"
+        classes = class_mask[t_idx] if class_mask is not None else []
+        dataset = task["val"].dataset
+
+        if isinstance(dataset, torch.utils.data.Subset):
+            base_dataset = dataset.dataset
+            indices = dataset.indices
+        else:
+            base_dataset = dataset
+            indices = range(len(dataset))
+
+        for cls_idx in classes:
+            cls_name = (
+                base_dataset.classes[cls_idx] if hasattr(base_dataset, "classes") else str(cls_idx)
+            )
+            if cls_name in domain_to_classimages[domain]:
+                continue
+
+            found_path = None
+            found_img = None  # 이미지 객체 직접 저장
+            if hasattr(base_dataset, "imgs"):
+                # ImageFolder 계열: 파일 경로 리스트 존재
+                for idx in indices:
+                    path, label = base_dataset.imgs[idx]
+                    if label == cls_idx:
+                        found_path = path
+                        try:
+                            from PIL import Image as _PILImage
+                            found_img = _PILImage.open(found_path).convert("RGB")
+                        except Exception:
+                            found_img = None
+                        break
+            else:
+                # .imgs 가 없으면 __getitem__을 통해 직접 로드
+                for idx in indices:
+                    try:
+                        img, label = base_dataset[idx]
+                    except Exception:
+                        continue  # 특정 샘플 로드 실패 시 건너뜀
+                    if isinstance(label, torch.Tensor):
+                        label = label.item()
+                    if label == cls_idx:
+                        # img 가 Tensor / PIL / ndarray 등 다양한 타입일 수 있으므로 그대로 저장
+                        found_img = img
+                        break
+
+            # 이미지 저장
+            if found_img is not None:
+                domain_to_classimages[domain][cls_name] = found_img
+
+    # 도메인별로 개별 저장
+    for dom in sorted(domain_to_classimages.keys()):
+        imgs = list(domain_to_classimages[dom].values())
+        titles = list(domain_to_classimages[dom].keys())
+        if imgs:
+            file_name = f"id_{dom}.png"
+            plot_grid(imgs, titles, os.path.join(save_dir, file_name))
+            print(f"ID 도메인 {dom} 샘플 그리드를 {os.path.join(save_dir, file_name)} 에 저장했습니다.")
+
+    # -------------------- OOD 데이터 --------------------
+    if "ood" in data_loader[-1]:
+        ood_dataset_wrapper = data_loader[-1]["ood"]
+        base_dataset = getattr(ood_dataset_wrapper, "dataset", ood_dataset_wrapper)
+
+        class_to_img = {}
+
+        # 1) ImageFolder 류 (.imgs 보유) 우선 처리
+        if hasattr(base_dataset, "imgs") and len(base_dataset.imgs) > 0:
+            for path, label in base_dataset.imgs:
+                if label not in class_to_img:
+                    class_to_img[label] = Image.open(path).convert("RGB")
+                if hasattr(base_dataset, "classes") and len(class_to_img) == len(base_dataset.classes):
+                    break
+        # 2) 그렇지 않으면 __getitem__으로 순회하며 수집
+        if not class_to_img:
+            for idx in range(len(base_dataset)):
+                try:
+                    img, label = base_dataset[idx]
+                except Exception as e:
+                    # 일부 샘플에서 오류 발생 시 건너뜀
+                    print(f"[Warning] OOD 샘플 로드 실패 idx={idx}: {e}")
+                    continue
+                # label tensor -> int
+                if isinstance(label, torch.Tensor):
+                    label = label.item()
+                if label not in class_to_img:
+                    # img 가 Tensor 면 numpy 로 변환 필요 없이 imshow 사용 가능
+                    # 단, PIL type 아닌 경우 imshow를 위해 shape 변환 필요 없음 (matplotlib 지원)
+                    class_to_img[label] = img
+                # 클래스 수 파악
+                if hasattr(base_dataset, "classes") and len(class_to_img) == len(base_dataset.classes):
+                    break
+
+        if class_to_img:
+            ood_images, ood_titles = [], []
+            for label_idx, img in class_to_img.items():
+                class_name = (
+                    base_dataset.classes[label_idx]
+                    if hasattr(base_dataset, "classes")
+                    else str(label_idx)
+                )
+                ood_images.append(img)
+                ood_titles.append(class_name)
+
+            plot_grid(ood_images, ood_titles, os.path.join(save_dir, "ood_samples.png"))
+            print(f"OOD 샘플 그리드를 {os.path.join(save_dir, 'ood_samples.png')} 에 저장했습니다.")
+        else:
+            print("[Warning] OOD 샘플을 찾지 못했습니다 – 시각화 생략.")

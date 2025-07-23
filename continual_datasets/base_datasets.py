@@ -919,8 +919,15 @@ class QMNIST_RGB(datasets.QMNIST):
         # img is PIL already if transform not None; ensure RGB
         if isinstance(img, Image.Image):
             img = img.convert('RGB')
-        else:  # if base returned tensor/array
-            img = Image.fromarray(img.numpy(), mode='L').convert('RGB')
+        else:
+            # torchvision may return Tensor (C,H,W) or numpy array; squeeze channel dim if exists
+            if isinstance(img, torch.Tensor):
+                img_np = img.squeeze().cpu().numpy()
+            elif isinstance(img, np.ndarray):
+                img_np = img.squeeze()
+            else:
+                img_np = np.array(img)
+            img = Image.fromarray(img_np, mode='L').convert('RGB')
 
         if self.transform is not None:
             img = self.transform(img)
