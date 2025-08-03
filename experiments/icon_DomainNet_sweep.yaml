@@ -12,7 +12,7 @@ parameters:
   num_tasks:
     value: 30
   data_path:
-    value: /local_datasets
+    value: /local_datasets/VIL
   IL_mode:
     value: vil
     
@@ -20,8 +20,9 @@ parameters:
   method:
     value: ICON
   seed:
-    values: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-
+    values: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+  ood_develop:
+    value: 10000
   # --- OOD 설정 ---
   ood_dataset:
     value: CORe50
@@ -38,6 +39,6 @@ parameters:
     
   # --- WandB 설정 ---
   wandb_project:
-    value: MainTable_DomainNet
+    value: MainTable_DomainNet_v2
   wandb_run:
     value: ICON
