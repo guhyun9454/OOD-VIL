@@ -162,6 +162,7 @@ if __name__ == '__main__':
     parser.add_argument('--ood_method', default='ALL', type=str, help='OOD detection method')
     parser.add_argument('--ood_dataset', default=None, type=str, help='OOD dataset name')
     parser.add_argument('--ood_eval', action='store_true', help='Perform ood evaluation only')
+    parser.add_argument("--ood_develop", type=int, default=None)
 
     #wandb
     parser.add_argument('--wandb_run', type=str, default=None, help='Wandb run name')

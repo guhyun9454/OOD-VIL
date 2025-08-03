@@ -537,6 +537,8 @@ class Engine():
         min_size = min(id_size, ood_size)
         if args.develop:
             min_size = 1000
+        if args.ood_develop:
+            min_size = args.ood_develop            
         if args.verbose:
             print(f"ID dataset size: {id_size}, OOD dataset size: {ood_size}. Using {min_size} samples each for evaluation.")
 
