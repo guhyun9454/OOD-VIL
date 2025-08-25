@@ -1,11 +1,11 @@
 import random
-from typing import List, Tuple
+from typing import List, Tuple, Union
 
 import torch
 
 
 class SimpleReplayBuffer:
-    def __init__(self, num_per_task: int = 0, device: torch.device | str = "cpu"):
+    def __init__(self, num_per_task: int = 0, device: Union[torch.device, str] = "cpu"):
         self.num_per_task = num_per_task
         self.device = torch.device(device)
         self.storage: List[Tuple[torch.Tensor, torch.Tensor]] = []
