@@ -9,7 +9,8 @@ from timm.models import create_model
 from sklearn.metrics import roc_auc_score
 from sklearn.metrics import confusion_matrix
 from utils import save_accuracy_heatmap, save_anomaly_histogram, save_confusion_matrix_plot, save_logits_statistics
-from continual_datasets.dataset_utils import RandomSampleWrapper  
+from continual_datasets.dataset_utils import RandomSampleWrapper
+from continual_datasets.simple_replay import SimpleReplayBuffer
 import matplotlib.pyplot as plt
 from OODdetectors.ood_adapter import compute_ood_scores, SUPPORTED_METHODS
 
@@ -52,6 +53,7 @@ class Engine:
         self.class_mask = class_mask
         self.domain_list = domain_list
         self.num_tasks = args.num_tasks
+        self.replay_buffer = SimpleReplayBuffer(args.replay_per_task, device)
 
     def train_one_epoch(self, model, criterion, data_loader, optimizer, device, epoch, args):
         model.train()
@@ -64,6 +66,10 @@ class Engine:
 
             inputs = inputs.to(device)
             targets = targets.to(device)
+            if len(self.replay_buffer) > 0:
+                repl_inputs, repl_targets = self.replay_buffer.sample(inputs.size(0))
+                inputs = torch.cat([inputs, repl_inputs], dim=0)
+                targets = torch.cat([targets, repl_targets], dim=0)
             
             outputs = model(inputs)
             loss = criterion(outputs, targets)
@@ -259,6 +265,8 @@ class Engine:
                 ood_duration = time.time() - ood_start
                 print(f"OOD evaluation after Task {task_id+1} completed in {str(datetime.timedelta(seconds=int(ood_duration)))}")
                 
+            self.replay_buffer.add_examples_from_loader(data_loader[task_id]['train'], task_id)
+
             # 추가: 일반 추론 시의 logits 통계 저장 - 제거
             if args.save:
                 checkpoint_dir = os.path.join(args.save, 'checkpoint')

@@ -24,6 +24,7 @@ from sklearn.metrics import roc_auc_score, confusion_matrix
 from continual_datasets.dataset_utils import RandomSampleWrapper
 from utils import save_accuracy_heatmap, save_logits_statistics, save_anomaly_histogram
 from OODdetectors.ood_adapter import compute_ood_scores, SUPPORTED_METHODS
+from continual_datasets.simple_replay import SimpleReplayBuffer
 
 def load_model(args):
     if args.dataset == 'CORe50':
@@ -94,6 +95,7 @@ class Engine():
             self.tanh = torch.nn.Tanh()
             
         self.cs = torch.nn.CosineSimilarity(dim=1, eps=1e-6)
+        self.replay_buffer = SimpleReplayBuffer(args.replay_per_task, device)
 
     def kl_div(self, p, q):
         p = F.softmax(p, dim=1)
@@ -206,6 +208,10 @@ class Engine():
                     break
             input = input.to(device, non_blocking=True)
             target = target.to(device, non_blocking=True)
+            if len(self.replay_buffer) > 0 and task_id > 0:
+                repl_input, repl_target = self.replay_buffer.sample(input.size(0))
+                input = torch.cat([input, repl_input], dim=0)
+                target = torch.cat([target, repl_target], dim=0)
             output = model(input)  # (bs, class + n)
             distill_loss = 0
             if self.distill_head is not None:
@@ -225,11 +231,14 @@ class Engine():
                         output[:, added_class] = output[:, cur_node]
                 output = output[:, :self.num_classes]       
                 
-            if class_mask is not None:
+            if len(self.replay_buffer) > 0 and task_id > 0:
+                mask = np.concatenate(class_mask[:task_id + 1])
+            else:
                 mask = class_mask[task_id]
-                not_mask = np.setdiff1d(np.arange(args.num_classes), mask)
-                not_mask = torch.tensor(not_mask, dtype=torch.int64).to(device)
-                logits = output.index_fill(dim=1, index=not_mask, value=float('-inf'))
+
+            not_mask = np.setdiff1d(np.arange(args.num_classes), mask)
+            not_mask = torch.tensor(not_mask, dtype=torch.int64).to(device)
+            logits = output.index_fill(dim=1, index=not_mask, value=float('-inf'))
 
             loss = criterion(logits, target)
            
@@ -483,6 +492,7 @@ class Engine():
                 if lr_scheduler:
                     lr_scheduler.step(epoch)
             self.post_train_task(model, task_id=task_id)
+            self.replay_buffer.add_examples_from_loader(data_loader[task_id]['train'], task_id)
             if self.args.d_threshold:
                 self.label_train_count[self.current_classes] += 1 
             test_stats = self.evaluate_till_now(model=model, data_loader=data_loader, device=device, 

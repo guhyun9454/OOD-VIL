@@ -148,6 +148,9 @@ if __name__ == '__main__':
     parser.add_argument('--eval', action='store_true', help='Perform evaluation only')
     parser.add_argument('--num_workers', default=8, type=int, help='number of workers for data loading')
 
+    # Simple replay buffer
+    parser.add_argument('--replay_per_task', type=int, default=0, help='Number of samples to store per task for simple replay (0 disables).')
+
     # Continual learning parameters
     parser.add_argument('--num_tasks', default=10, type=int, help='number of sequential tasks')
     parser.add_argument('--IL_mode', type=str, default='cil', choices=['cil', 'dil', 'vil', 'joint'], help='Incremental Learning mode')
