@@ -1,0 +1,43 @@
+# icon_sweep.yaml
+name: ICON_replay_sweep
+program: main.py
+method: grid
+parameters:
+  # --- 기본 설정 ---
+  dataset:
+    value: iDigits
+  num_tasks:
+    value: 20
+  data_path:
+    value: /local_datasets
+  IL_mode:
+    value: vil
+    
+  # --- 모델 및 시드 ---
+  method:
+    value: ICON
+  seed:
+    values: [1, 2, 3, 4, 5]
+  ood_develop:
+    value: 10000
+  # --- OOD 설정 ---
+  ood_dataset:
+    value: EMNIST
+  ood_method:
+    value: MSP,MAXLOGIT,ENERGY,GEN,PRO_GEN
+  gen_gamma:
+    value: 0.01
+  gen_M:
+    value: 3
+  pro_gen_gd_steps:
+    value: 3
+  pro_gen_noise_level:
+    value: "5e-4"
+  replay_per_task:
+    value: 100
+    
+  # --- WandB 설정 ---
+  wandb_project:
+    value: dummy
+  wandb_run:
+    value: ICON_replay
