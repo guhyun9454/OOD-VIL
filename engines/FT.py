@@ -4,6 +4,7 @@ import time
 import datetime
 import numpy as np
 import torch.nn.functional as F
+import math
 from timm.utils import accuracy
 from timm.models import create_model
 from sklearn.metrics import roc_auc_score
@@ -12,6 +13,7 @@ from utils import save_accuracy_heatmap, save_anomaly_histogram, save_confusion_
 from continual_datasets.dataset_utils import RandomSampleWrapper  
 import matplotlib.pyplot as plt
 from OODdetectors.ood_adapter import compute_ood_scores, SUPPORTED_METHODS
+from torch.utils.data import DataLoader
 
 def load_model(args):
     model = create_model(
@@ -89,6 +91,100 @@ class Engine:
         epoch_avg_loss = total_loss / total_samples if total_samples > 0 else 0.0
         epoch_avg_acc = total_acc / total_samples if total_samples > 0 else 0.0
         return epoch_avg_loss, epoch_avg_acc
+
+    def _oe_enabled(self, args) -> bool:
+        """OE를 --ood_method 로 선택했을 때만 task마다 OE 파인튜닝을 수행."""
+        ood_method = getattr(args, "ood_method", None)
+        if not ood_method:
+            return False
+        ood_method = str(ood_method).upper()
+        if ood_method == "ALL":
+            return False
+        methods = [m.strip().upper() for m in ood_method.split(",") if m.strip()]
+        return "OE" in methods
+
+    def oe_finetune_task(
+        self,
+        model,
+        criterion,
+        id_loader,
+        oe_dataset,
+        optimizer,
+        device,
+        task_id,
+        args,
+    ):
+        """
+        Outlier Exposure(OE) fine-tuning:
+        loss = CE(ID) + λ * CE(Uniform, softmax(OE))
+        """
+        if oe_dataset is None:
+            raise ValueError("OE fine-tuning을 위해서는 args.ood_dataset 및 OOD dataset 로드가 필요합니다.")
+
+        # OOD(OE) loader (label은 사용하지 않음)
+        oe_loader = DataLoader(
+            oe_dataset,
+            batch_size=args.batch_size,
+            shuffle=True,
+            num_workers=args.num_workers,
+            pin_memory=True,
+        )
+
+        # 기존 optimizer를 재사용하되, OE 단계에서만 lr을 0.001로 고정하고 이후 복원
+        old_lrs = [pg.get("lr", None) for pg in optimizer.param_groups]
+        for pg in optimizer.param_groups:
+            pg["lr"] = float(args.oe_ft_lr)
+
+        model.train()
+        for ft_epoch in range(int(args.oe_ft_epochs)):
+            running_loss, running_id, running_oe = 0.0, 0.0, 0.0
+            n_steps = 0
+            oe_iter = iter(oe_loader)
+
+            for batch_idx, (x_in, y_in) in enumerate(id_loader):
+                if args.develop and batch_idx > 20:
+                    break
+
+                try:
+                    x_oe, _ = next(oe_iter)
+                except StopIteration:
+                    oe_iter = iter(oe_loader)
+                    x_oe, _ = next(oe_iter)
+
+                x_in = x_in.to(device, non_blocking=True)
+                y_in = y_in.to(device, non_blocking=True)
+                x_oe = x_oe.to(device, non_blocking=True)
+
+                logits_in = model(x_in)
+                loss_id = criterion(logits_in, y_in)
+
+                logits_oe = model(x_oe)
+                logp_oe = F.log_softmax(logits_oe, dim=1)
+                loss_oe = -logp_oe.mean(dim=1).mean()
+
+                loss = loss_id + float(args.oe_lambda) * loss_oe
+
+                optimizer.zero_grad(set_to_none=True)
+                loss.backward()
+                optimizer.step()
+
+                bs = x_in.size(0)
+                running_loss += loss.item() * bs
+                running_id += loss_id.item() * bs
+                running_oe += loss_oe.item() * bs
+                n_steps += bs
+
+            if n_steps > 0:
+                print(
+                    f"Task {task_id+1} | OE-FT Epoch [{ft_epoch+1}/{int(args.oe_ft_epochs)}] "
+                    f"Loss={running_loss/n_steps:.4f} (ID={running_id/n_steps:.4f}, OE={running_oe/n_steps:.4f}) "
+                    f"lr={optimizer.param_groups[0]['lr']:.6f}"
+                )
+
+        # lr 복원
+        for pg, lr in zip(optimizer.param_groups, old_lrs):
+            if lr is not None:
+                pg["lr"] = lr
 
     def evaluate_task(self, model, data_loader, device, task_id, class_mask, args):
         """
@@ -243,6 +339,24 @@ class Engine:
                     lr_scheduler.step(epoch)
             train_duration = time.time() - train_start
             print(f"Task {task_id+1} training completed in {str(datetime.timedelta(seconds=int(train_duration)))}")
+
+            # --- OE fine-tuning (optional) ---
+            if self._oe_enabled(args):
+                if not args.ood_dataset:
+                    raise ValueError("OE를 사용하려면 --ood_dataset 을 지정해야 합니다.")
+                oe_dataset = data_loader[-1].get("ood", None)
+                print(f"{f'OE Fine-tuning (lambda={args.oe_lambda}, epochs={args.oe_ft_epochs}, lr={args.oe_ft_lr})':=^60}")
+                self.oe_finetune_task(
+                    model=model,
+                    criterion=criterion,
+                    id_loader=data_loader[task_id]["train"],
+                    oe_dataset=oe_dataset,
+                    optimizer=optimizer,
+                    device=device,
+                    task_id=task_id,
+                    args=args,
+                )
+
             print(f'{f"Testing on Task {task_id+1}/{args.num_tasks}":=^60}')
             eval_start = time.time()
             self.evaluate_till_now(model, data_loader, device, task_id, class_mask, acc_matrix, args)

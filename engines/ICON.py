@@ -276,6 +276,123 @@ class Engine():
         print("Averaged stats:", metric_logger)
         return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
+    def _oe_enabled(self, args) -> bool:
+        """OE를 --ood_method 로 명시했을 때만 task마다 OE 파인튜닝을 수행."""
+        ood_method = getattr(args, "ood_method", None)
+        if not ood_method:
+            return False
+        ood_method = str(ood_method).upper()
+        if ood_method == "ALL":
+            return False
+        methods = [m.strip().upper() for m in ood_method.split(",") if m.strip()]
+        return "OE" in methods
+
+    def _forward_logits_all_classes(self, model: torch.nn.Module, x: torch.Tensor, task_id: int, class_mask, device):
+        """
+        ICON은 head 확장으로 output dim이 (num_classes + extra_nodes)일 수 있음.
+        OE loss는 '최종 클래스 노드'(num_classes)에 대해 uniform 규제를 걸어야 하므로,
+        기존 train_one_epoch와 동일한 방식으로 num_classes 로짓으로 정규화/정렬한다.
+        """
+        output = model(x)
+        if output.shape[-1] > self.num_classes:
+            output, _, _ = self.get_max_label_logits(output, class_mask[task_id], slice=False)
+            if len(self.added_classes_in_cur_task) > 0:
+                for added_class in self.added_classes_in_cur_task:
+                    cur_node = np.where(self.labels_in_head == added_class)[0][-1]
+                    output[:, added_class] = output[:, cur_node]
+            output = output[:, :self.num_classes]
+        return output
+
+    def oe_finetune_task(
+        self,
+        model: torch.nn.Module,
+        criterion,
+        id_loader,
+        oe_dataset,
+        optimizer: torch.optim.Optimizer,
+        device: torch.device,
+        task_id: int,
+        class_mask,
+        args,
+    ):
+        """
+        Outlier Exposure(OE) fine-tuning:
+        loss = CE(ID; (current task mask)) + λ * CE(Uniform, softmax(OE))
+        """
+        if oe_dataset is None:
+            raise ValueError("OE fine-tuning을 위해서는 args.ood_dataset 및 OOD dataset 로드가 필요합니다.")
+
+        oe_loader = torch.utils.data.DataLoader(
+            oe_dataset,
+            batch_size=args.batch_size,
+            shuffle=True,
+            num_workers=args.num_workers,
+            pin_memory=True,
+        )
+
+        old_lrs = [pg.get("lr", None) for pg in optimizer.param_groups]
+        for pg in optimizer.param_groups:
+            pg["lr"] = float(args.oe_ft_lr)
+
+        model.train(True)
+        for ft_epoch in range(int(args.oe_ft_epochs)):
+            running_loss, running_id, running_oe = 0.0, 0.0, 0.0
+            n_steps = 0
+            oe_iter = iter(oe_loader)
+
+            for batch_idx, (x_in, y_in) in enumerate(id_loader):
+                if args.develop and batch_idx > 20:
+                    break
+
+                try:
+                    x_oe, _ = next(oe_iter)
+                except StopIteration:
+                    oe_iter = iter(oe_loader)
+                    x_oe, _ = next(oe_iter)
+
+                x_in = x_in.to(device, non_blocking=True)
+                y_in = y_in.to(device, non_blocking=True)
+                x_oe = x_oe.to(device, non_blocking=True)
+
+                logits_in_full = self._forward_logits_all_classes(model, x_in, task_id, class_mask, device)
+                # ID loss는 ICON 기존 학습과 동일하게 task 마스크 적용
+                if class_mask is not None:
+                    mask = class_mask[task_id]
+                    not_mask = np.setdiff1d(np.arange(args.num_classes), mask)
+                    not_mask = torch.tensor(not_mask, dtype=torch.int64, device=device)
+                    logits_in = logits_in_full.index_fill(dim=1, index=not_mask, value=float("-inf"))
+                else:
+                    logits_in = logits_in_full
+                loss_id = criterion(logits_in, y_in)
+
+                logits_oe_full = self._forward_logits_all_classes(model, x_oe, task_id, class_mask, device)
+                logp_oe = F.log_softmax(logits_oe_full, dim=1)
+                loss_oe = -logp_oe.mean(dim=1).mean()
+
+                loss = loss_id + float(args.oe_lambda) * loss_oe
+
+                optimizer.zero_grad(set_to_none=True)
+                loss.backward()
+                optimizer.step()
+
+                bs = x_in.size(0)
+                running_loss += loss.item() * bs
+                running_id += loss_id.item() * bs
+                running_oe += loss_oe.item() * bs
+                n_steps += bs
+
+            if n_steps > 0:
+                print(
+                    f"Task {task_id+1} | OE-FT Epoch [{ft_epoch+1}/{int(args.oe_ft_epochs)}] "
+                    f"Loss={running_loss/n_steps:.4f} (ID={running_id/n_steps:.4f}, OE={running_oe/n_steps:.4f}) "
+                    f"lr={optimizer.param_groups[0]['lr']:.6f}"
+                )
+
+        # lr 복원
+        for pg, lr in zip(optimizer.param_groups, old_lrs):
+            if lr is not None:
+                pg["lr"] = lr
+
     def get_max_label_logits(self, output, class_mask, task_id=None, slice=True, target=None):
         for label in range(self.num_classes): 
             label_nodes = np.where(self.labels_in_head == label)[0]
@@ -482,6 +599,25 @@ class Engine():
                                                    set_training_mode=True, task_id=task_id, class_mask=class_mask, ema_model=ema_model, args=args)
                 if lr_scheduler:
                     lr_scheduler.step(epoch)
+
+            # --- OE fine-tuning (optional) ---
+            if self._oe_enabled(args):
+                if not args.ood_dataset:
+                    raise ValueError("OE를 사용하려면 --ood_dataset 을 지정해야 합니다.")
+                oe_dataset = data_loader[-1].get("ood", None)
+                print(f"{f'OE Fine-tuning (lambda={args.oe_lambda}, epochs={args.oe_ft_epochs}, lr={args.oe_ft_lr})':=^60}")
+                self.oe_finetune_task(
+                    model=model,
+                    criterion=criterion,
+                    id_loader=data_loader[task_id]["train"],
+                    oe_dataset=oe_dataset,
+                    optimizer=optimizer,
+                    device=device,
+                    task_id=task_id,
+                    class_mask=class_mask,
+                    args=args,
+                )
+
             self.post_train_task(model, task_id=task_id)
             if self.args.d_threshold:
                 self.label_train_count[self.current_classes] += 1 

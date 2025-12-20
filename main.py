@@ -188,6 +188,11 @@ if __name__ == '__main__':
     parser.add_argument('--pro_ent_noise_level', type=float, default=0.0014, help='Noise level for PRO_ENT postprocessor')
     parser.add_argument('--pro_ent_gd_steps', type=int, default=2, help='Gradient descent steps for PRO_ENT postprocessor')
 
+    # OE (Outlier Exposure) fine-tuning hyper-parameters
+    parser.add_argument('--oe_lambda', type=float, default=0.5, help='Lambda for OE loss (ID CE + lambda * OE)')
+    parser.add_argument('--oe_ft_epochs', type=int, default=10, help='OE fine-tuning epochs per task')
+    parser.add_argument('--oe_ft_lr', type=float, default=0.001, help='OE fine-tuning learning rate')
+
     args = parser.parse_args()
     Path(args.data_path).mkdir(parents=True, exist_ok=True)
     utils.update_ood_hyperparams(args)
