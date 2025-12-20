@@ -335,7 +335,8 @@ class Engine():
             pg["lr"] = float(args.oe_ft_lr)
 
         model.train(True)
-        for ft_epoch in range(int(args.oe_ft_epochs)):
+        ft_epochs = 1 if getattr(args, "develop", False) else int(args.oe_ft_epochs)
+        for ft_epoch in range(int(ft_epochs)):
             running_loss, running_id, running_oe = 0.0, 0.0, 0.0
             n_steps = 0
             oe_iter = iter(oe_loader)
