@@ -47,6 +47,9 @@ def main(args):
     data_loader, class_mask, domain_list = build_continual_dataloader(args)
     if args.ood_dataset:
         data_loader[-1]['ood'] = get_ood_dataset(args.ood_dataset, args)
+    # OE(Outlier Exposure) fine-tuning에 사용할 별도 outlier 데이터셋
+    if getattr(args, "oe_dataset", None):
+        data_loader[-1]['oe'] = get_ood_dataset(args.oe_dataset, args)
 
     if args.develop_tasks: return
 
@@ -163,6 +166,9 @@ if __name__ == '__main__':
     parser.add_argument('--ood_dataset', default=None, type=str, help='OOD dataset name')
     parser.add_argument('--ood_eval', action='store_true', help='Perform ood evaluation only')
     parser.add_argument("--ood_develop", type=int, default=None)
+
+    # OE dataset (train-time outlier exposure)
+    parser.add_argument('--oe_dataset', default=None, type=str, help='Dataset name used for OE fine-tuning (train-time). If not set, fall back to ood_dataset.')
 
     #wandb
     parser.add_argument('--wandb_run', type=str, default=None, help='Wandb run name')

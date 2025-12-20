@@ -602,9 +602,12 @@ class Engine():
 
             # --- OE fine-tuning (optional) ---
             if self._oe_enabled(args):
-                if not args.ood_dataset:
-                    raise ValueError("OE를 사용하려면 --ood_dataset 을 지정해야 합니다.")
-                oe_dataset = data_loader[-1].get("ood", None)
+                # 우선순위: --oe_dataset (학습용) -> --ood_dataset (fallback)
+                oe_dataset = data_loader[-1].get("oe", None)
+                if oe_dataset is None:
+                    oe_dataset = data_loader[-1].get("ood", None)
+                if oe_dataset is None:
+                    raise ValueError("OE를 사용하려면 --oe_dataset (또는 --ood_dataset) 을 지정해야 합니다.")
                 print(f"{f'OE Fine-tuning (lambda={args.oe_lambda}, epochs={args.oe_ft_epochs}, lr={args.oe_ft_lr})':=^60}")
                 self.oe_finetune_task(
                     model=model,
