@@ -199,6 +199,16 @@ if __name__ == '__main__':
     parser.add_argument('--oe_ft_epochs', type=int, default=10, help='OE fine-tuning epochs per task')
     parser.add_argument('--oe_ft_lr', type=float, default=0.001, help='OE fine-tuning learning rate')
 
+    # DOS (Diverse Outlier Sampling) fine-tuning hyper-parameters
+    parser.add_argument('--dos_candidate_bs', type=int, default=None, help='Candidate OOD batch size for DOS sampling. If None, use batch-size.')
+    parser.add_argument('--dos_num_cluster', type=int, default=None, help='Number of clusters (K) for DOS. If None, use num_select (ID batch size).')
+    parser.add_argument('--dos_n_init', type=int, default=10, help='KMeans n_init for DOS.')
+    parser.add_argument('--dos_hardness', type=str, default='msp', choices=['msp', 'maxlogit', 'energy'], help='Hardness score used when absent class is not available.')
+    parser.add_argument('--dos_fill_mode', type=str, default='random', choices=['random', 'hard'], help='How to fill remaining selections when some clusters are short.')
+    parser.add_argument('--dos_lambda', type=float, default=None, help='Weight for DOS OOD loss. If None, fall back to oe_lambda.')
+    parser.add_argument('--dos_ft_epochs', type=int, default=None, help='DOS fine-tuning epochs per task. If None, fall back to oe_ft_epochs.')
+    parser.add_argument('--dos_ft_lr', type=float, default=None, help='DOS fine-tuning learning rate. If None, fall back to oe_ft_lr.')
+
     args = parser.parse_args()
     Path(args.data_path).mkdir(parents=True, exist_ok=True)
     utils.update_ood_hyperparams(args)

@@ -18,6 +18,7 @@ __all__ = ["SUPPORTED_METHODS", "compute_ood_scores"]
 SUPPORTED_METHODS: List[str] = [
     "MSP",
     "OE",
+    "DOS",
     "ENERGY",
     "GEN",
     "PRO_MSP",
@@ -39,6 +40,7 @@ _DEFAULT_PARAMS = {
 _POSTPROCESSOR_REGISTRY = {
     "MSP": BasePostprocessor,
     "OE": BasePostprocessor,
+    "DOS": BasePostprocessor,
     "ENERGY": EBOPostprocessor,
     "GEN": GENPostprocessor,
     "PRO_GEN": PRO_GENPostprocessor,

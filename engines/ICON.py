@@ -24,6 +24,7 @@ from sklearn.metrics import roc_auc_score, confusion_matrix
 from continual_datasets.dataset_utils import RandomSampleWrapper
 from utils import save_accuracy_heatmap, save_logits_statistics, save_anomaly_histogram
 from OODdetectors.ood_adapter import compute_ood_scores, SUPPORTED_METHODS
+from DOS.dos_sampler import DOSConfig, dos_select_batch
 
 def load_model(args):
     if args.dataset == 'CORe50':
@@ -287,6 +288,17 @@ class Engine():
         methods = [m.strip().upper() for m in ood_method.split(",") if m.strip()]
         return "OE" in methods
 
+    def _dos_enabled(self, args) -> bool:
+        """DOS를 --ood_method 로 명시했을 때만 task마다 DOS 파인튜닝을 수행."""
+        ood_method = getattr(args, "ood_method", None)
+        if not ood_method:
+            return False
+        ood_method = str(ood_method).upper()
+        if ood_method == "ALL":
+            return False
+        methods = [m.strip().upper() for m in ood_method.split(",") if m.strip()]
+        return "DOS" in methods
+
     def _forward_logits_all_classes(self, model: torch.nn.Module, x: torch.Tensor, task_id: int, class_mask, device):
         """
         ICON은 head 확장으로 output dim이 (num_classes + extra_nodes)일 수 있음.
@@ -390,6 +402,126 @@ class Engine():
                 )
 
         # lr 복원
+        for pg, lr in zip(optimizer.param_groups, old_lrs):
+            if lr is not None:
+                pg["lr"] = lr
+
+    def dos_finetune_task(
+        self,
+        model: torch.nn.Module,
+        criterion,
+        id_loader,
+        oe_dataset,
+        optimizer: torch.optim.Optimizer,
+        device: torch.device,
+        task_id: int,
+        class_mask,
+        args,
+    ):
+        """
+        DOS (Diverse Outlier Sampling) fine-tuning:
+        - 후보 OOD 배치에서 특징을 뽑아 정규화 후 KMeans로 클러스터링
+        - 클러스터별로 'hard' OOD를 선택해(outlier 다양성 + 정보량) OE 손실(Uniform)을 적용
+
+        loss = CE(ID; task mask) + λ * CE(Uniform, softmax(DOS-selected OOD))
+        """
+        if oe_dataset is None:
+            raise ValueError("DOS fine-tuning을 위해서는 --oe_dataset (또는 --ood_dataset) 로 OOD dataset 로드가 필요합니다.")
+
+        cand_bs = int(getattr(args, "dos_candidate_bs", 0) or args.batch_size)
+        oe_loader = torch.utils.data.DataLoader(
+            oe_dataset,
+            batch_size=cand_bs,
+            shuffle=True,
+            num_workers=args.num_workers,
+            pin_memory=True,
+            drop_last=True,
+        )
+
+        dos_lambda = float(getattr(args, "dos_lambda", None) or args.oe_lambda)
+        ft_lr = float(getattr(args, "dos_ft_lr", None) or args.oe_ft_lr)
+        ft_epochs = int(getattr(args, "dos_ft_epochs", None) or (1 if getattr(args, "develop", False) else args.oe_ft_epochs))
+
+        old_lrs = [pg.get("lr", None) for pg in optimizer.param_groups]
+        for pg in optimizer.param_groups:
+            pg["lr"] = ft_lr
+
+        model.train(True)
+        for ft_epoch in range(int(ft_epochs)):
+            running_loss, running_id, running_ood = 0.0, 0.0, 0.0
+            n_steps = 0
+            oe_iter = iter(oe_loader)
+
+            for batch_idx, (x_in, y_in) in enumerate(id_loader):
+                if args.develop and batch_idx > 20:
+                    break
+
+                try:
+                    x_can, _ = next(oe_iter)
+                except StopIteration:
+                    oe_iter = iter(oe_loader)
+                    x_can, _ = next(oe_iter)
+
+                x_in = x_in.to(device, non_blocking=True)
+                y_in = y_in.to(device, non_blocking=True)
+                x_can = x_can.to(device, non_blocking=True)
+
+                num_select = int(x_in.size(0))
+                num_clusters = int(getattr(args, "dos_num_cluster", 0) or num_select)
+
+                cfg = DOSConfig(
+                    num_clusters=num_clusters,
+                    n_init=int(getattr(args, "dos_n_init", 10)),
+                    hardness=str(getattr(args, "dos_hardness", "msp")),
+                    fill_mode=str(getattr(args, "dos_fill_mode", "random")),
+                    energy_temperature=float(getattr(args, "energy_temperature", 1.0)),
+                    seed=int(args.seed) + int(task_id) * 10000 + int(ft_epoch) * 1000 + int(batch_idx),
+                )
+
+                # DOS selection (no grad, uses eval mode internally)
+                x_sel = dos_select_batch(
+                    model,
+                    x_can,
+                    num_select=num_select,
+                    cfg=cfg,
+                    labels_in_head=self.labels_in_head,
+                    num_classes=self.num_classes,
+                    override_last_for_labels=self.added_classes_in_cur_task,
+                )
+
+                logits_in_full = self._forward_logits_all_classes(model, x_in, task_id, class_mask, device)
+                if class_mask is not None:
+                    mask = class_mask[task_id]
+                    not_mask = np.setdiff1d(np.arange(args.num_classes), mask)
+                    not_mask = torch.tensor(not_mask, dtype=torch.int64, device=device)
+                    logits_in = logits_in_full.index_fill(dim=1, index=not_mask, value=float("-inf"))
+                else:
+                    logits_in = logits_in_full
+                loss_id = criterion(logits_in, y_in)
+
+                logits_ood_full = self._forward_logits_all_classes(model, x_sel, task_id, class_mask, device)
+                logp_ood = F.log_softmax(logits_ood_full, dim=1)
+                loss_ood = -logp_ood.mean(dim=1).mean()
+
+                loss = loss_id + dos_lambda * loss_ood
+
+                optimizer.zero_grad(set_to_none=True)
+                loss.backward()
+                optimizer.step()
+
+                bs = x_in.size(0)
+                running_loss += loss.item() * bs
+                running_id += loss_id.item() * bs
+                running_ood += loss_ood.item() * bs
+                n_steps += bs
+
+            if n_steps > 0:
+                print(
+                    f"Task {task_id+1} | DOS-FT Epoch [{ft_epoch+1}/{int(ft_epochs)}] "
+                    f"Loss={running_loss/n_steps:.4f} (ID={running_id/n_steps:.4f}, OOD={running_ood/n_steps:.4f}) "
+                    f"lr={optimizer.param_groups[0]['lr']:.6f}"
+                )
+
         for pg, lr in zip(optimizer.param_groups, old_lrs):
             if lr is not None:
                 pg["lr"] = lr
@@ -601,9 +733,34 @@ class Engine():
                 if lr_scheduler:
                     lr_scheduler.step(epoch)
 
-            # --- OE fine-tuning (optional) ---
-            if self._oe_enabled(args):
-                # 우선순위: --oe_dataset (학습용) -> --ood_dataset (fallback)
+            # --- DOS / OE fine-tuning (optional) ---
+            # DOS가 지정되면 OE보다 우선 적용 (둘 다 적힌 경우 중복 파인튜닝 방지)
+            if self._dos_enabled(args):
+                oe_dataset = data_loader[-1].get("oe", None)
+                if oe_dataset is None:
+                    oe_dataset = data_loader[-1].get("ood", None)
+                if oe_dataset is None:
+                    raise ValueError("DOS를 사용하려면 --oe_dataset (또는 --ood_dataset) 을 지정해야 합니다.")
+                dos_title = (
+                    "DOS Fine-tuning "
+                    f"(hard={getattr(args, 'dos_hardness', 'msp')}, "
+                    f"lambda={getattr(args, 'dos_lambda', None) or args.oe_lambda}, "
+                    f"epochs={getattr(args, 'dos_ft_epochs', None) or args.oe_ft_epochs}, "
+                    f"lr={getattr(args, 'dos_ft_lr', None) or args.oe_ft_lr})"
+                )
+                print(f"{dos_title:=^60}")
+                self.dos_finetune_task(
+                    model=model,
+                    criterion=criterion,
+                    id_loader=data_loader[task_id]["train"],
+                    oe_dataset=oe_dataset,
+                    optimizer=optimizer,
+                    device=device,
+                    task_id=task_id,
+                    class_mask=class_mask,
+                    args=args,
+                )
+            elif self._oe_enabled(args):
                 oe_dataset = data_loader[-1].get("oe", None)
                 if oe_dataset is None:
                     oe_dataset = data_loader[-1].get("ood", None)
