@@ -16,10 +16,10 @@ from timm.utils.model_ema import ModelEmaV2
 import copy
 import utils
 import torch.nn.functional as F
-from sklearn.cluster import KMeans
 from timm.models import create_model
 import matplotlib.pyplot as plt
 
+from sklearn.cluster import KMeans
 from sklearn.metrics import roc_auc_score, confusion_matrix
 from continual_datasets.dataset_utils import RandomSampleWrapper
 from utils import save_accuracy_heatmap, save_logits_statistics, save_anomaly_histogram

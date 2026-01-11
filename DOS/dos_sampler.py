@@ -6,13 +6,7 @@ from typing import Iterable, Optional, Tuple
 import numpy as np
 import torch
 import torch.nn.functional as F
-
-# scikit-learn은 환경에 따라 numpy ABI 불일치로 import가 깨질 수 있어,
-# 가능하면 사용하되 실패 시 numpy 기반의 간단 KMeans로 fallback 합니다.
-try:
-    from sklearn.cluster import KMeans as _SKLearnKMeans  # type: ignore
-except Exception:  # pragma: no cover
-    _SKLearnKMeans = None
+from sklearn.cluster import KMeans
 
 
 @dataclass(frozen=True)
@@ -30,66 +24,6 @@ class DOSConfig:
     fill_mode: str = "random"  # {"random", "hard"}
     energy_temperature: float = 1.0
     seed: Optional[int] = None
-
-
-def _kmeans_fit_predict_numpy(
-    x: np.ndarray,
-    *,
-    n_clusters: int,
-    n_init: int = 10,
-    max_iter: int = 50,
-    seed: Optional[int] = None,
-) -> np.ndarray:
-    """A small, dependency-free KMeans (Lloyd) for fallback."""
-
-    x = x.astype(np.float32, copy=False)
-    N, D = x.shape
-    k = int(n_clusters)
-    if k <= 0 or k > N:
-        raise ValueError(f"[DOS] invalid n_clusters={k} for N={N}")
-
-    rng = np.random.default_rng(seed)
-    best_inertia = float("inf")
-    best_labels = None
-
-    x_norm2 = (x * x).sum(axis=1, keepdims=True)  # (N, 1)
-
-    for init_id in range(int(max(1, n_init))):
-        # random init (good enough for small batches)
-        init_idx = rng.choice(N, size=k, replace=False)
-        centers = x[init_idx].copy()  # (k, D)
-
-        labels = np.zeros(N, dtype=np.int64)
-        for _ in range(int(max_iter)):
-            c_norm2 = (centers * centers).sum(axis=1, keepdims=False)[None, :]  # (1, k)
-            dist2 = x_norm2 + c_norm2 - 2.0 * (x @ centers.T)  # (N, k)
-            new_labels = dist2.argmin(axis=1).astype(np.int64)
-
-            if np.array_equal(new_labels, labels):
-                labels = new_labels
-                break
-            labels = new_labels
-
-            # recompute centers
-            for c in range(k):
-                mask = labels == c
-                if not np.any(mask):
-                    centers[c] = x[rng.integers(0, N)]
-                else:
-                    centers[c] = x[mask].mean(axis=0)
-
-        # inertia
-        c_norm2 = (centers * centers).sum(axis=1, keepdims=False)[None, :]
-        dist2 = x_norm2 + c_norm2 - 2.0 * (x @ centers.T)
-        inertia = float(dist2[np.arange(N), labels].sum())
-
-        if inertia < best_inertia:
-            best_inertia = inertia
-            best_labels = labels.copy()
-
-    if best_labels is None:
-        raise RuntimeError("[DOS] KMeans fallback failed unexpectedly.")
-    return best_labels
 
 
 def forward_logits_and_feats(model: torch.nn.Module, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -234,20 +168,11 @@ def dos_select_indices(
         order = np.argsort(-hardness)  # desc
         return order[:num_select].astype(np.int64)
 
-    # KMeans clustering (use sklearn if available; otherwise fallback)
+    # KMeans clustering (sklearn)
     feats_norm = feats_norm.astype(np.float32, copy=False)
-    if _SKLearnKMeans is not None:
-        random_state = None if cfg.seed is None else int(cfg.seed)
-        kmeans = _SKLearnKMeans(n_clusters=k, n_init=int(cfg.n_init), random_state=random_state)
-        labels = kmeans.fit_predict(feats_norm)
-    else:
-        labels = _kmeans_fit_predict_numpy(
-            feats_norm,
-            n_clusters=k,
-            n_init=int(cfg.n_init),
-            max_iter=50,
-            seed=cfg.seed,
-        )
+    random_state = None if cfg.seed is None else int(cfg.seed)
+    kmeans = KMeans(n_clusters=k, n_init=int(cfg.n_init), random_state=random_state)
+    labels = kmeans.fit_predict(feats_norm)
 
     base = num_select // k
     rem = num_select % k
