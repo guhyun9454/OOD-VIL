@@ -131,6 +131,25 @@ if __name__ == '__main__':
     parser.add_argument('--pretrained', default=True, help='Load pretrained model or not')
     parser.add_argument('--linear_probing', action='store_true', help='Enable linear probing mode (freeze backbone, only train classifier)')
 
+    # RainbowPrompt parameters (used when --method RainbowPrompt)
+    parser.add_argument('--rp_model', default='vit_base_patch16_224', type=str, help='RainbowPrompt backbone (e.g., vit_base_patch16_224)')
+    parser.add_argument('--rp_length', default=20, type=int, help='RainbowPrompt prompt length')
+    parser.add_argument('--rp_pool_size', default=None, type=int, help='RainbowPrompt prompt pool size (default: num_tasks)')
+    parser.add_argument('--rp_top_k', default=1, type=int, help='RainbowPrompt top-k prompts from pool')
+    parser.add_argument('--rp_balancing', default=1.0, type=float, help='Coefficient for sim_loss term')
+    parser.add_argument('--rp_warm_up', default=1, type=int, help='Warm-up epochs before using Rainbow prompts')
+    parser.add_argument('--rp_relation_type', default='attention', type=str, help='Prompt evolution relation type (default: attention)')
+    parser.add_argument('--rp_use_linear', action='store_true', help='Use linear projection modules in RainbowPrompt evolution')
+    parser.add_argument('--rp_D1', default=1, type=int, help='RainbowPrompt hidden dim D1')
+    parser.add_argument('--rp_D2', default=1, type=int, help='RainbowPrompt hidden dim D2')
+    parser.add_argument('--rp_KI_iter', default=10, type=int, help='RainbowPrompt KI iterations for self-attn layers')
+    parser.add_argument('--rp_clip_grad', default=1.0, type=float, help='Gradient clipping norm for RainbowPrompt')
+    parser.add_argument('--rp_e_prompt_layer_idx', default=None, type=int, nargs='*', help='E-prompt layer indices (default: 0..11)')
+    parser.add_argument('--rp_self_attn_idx', default=None, type=int, nargs='*', help='Self-attn layer indices (default: 0..5)')
+    parser.add_argument('--train_mask', dest='train_mask', action='store_true', help='(RainbowPrompt) mask non-current classes at training')
+    parser.add_argument('--no_train_mask', dest='train_mask', action='store_false', help='(RainbowPrompt) disable class masking at training')
+    parser.set_defaults(train_mask=True)
+
 
     # Optimizer parameters
     parser.add_argument('--opt', default='adam', type=str, metavar='OPTIMIZER', help='Optimizer (default: "adam"')
