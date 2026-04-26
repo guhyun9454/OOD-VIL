@@ -914,13 +914,10 @@ class QMNIST_RGB(datasets.QMNIST):
         self.classes = [i for i in range(10)]
 
     def __getitem__(self, index):
-        img, target = super().__getitem__(index)
-
-        # img is PIL already if transform not None; ensure RGB
-        if isinstance(img, Image.Image):
-            img = img.convert('RGB')
-        else:  # if base returned tensor/array
-            img = Image.fromarray(img.numpy(), mode='L').convert('RGB')
+        # Fetch raw tensor before any transform and convert to RGB first,
+        # mirroring KMNIST_RGB and MNIST_RGB pattern to avoid mode/shape issues.
+        img, target = self.data[index], int(self.targets[index])
+        img = Image.fromarray(img.numpy(), mode='L').convert('RGB')
 
         if self.transform is not None:
             img = self.transform(img)
